@@ -3,44 +3,83 @@ name: Android CI
 on:
   push:
     branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
+          cache: gradle
 
-      - name: Install Gradle
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.7'
 
-      - name: Create google-services.json
+      # ── Create a minimal but VALID google-services.json so the
+      #    processGoogleServices task passes in CI.
+      #    The 'project_number' field is REQUIRED by the plugin —
+      #    its absence is what caused the original build failure.
+      #    Replace all dummy values when wiring a real Firebase project.
+      - name: Create google-services.json (CI placeholder)
         run: |
-          cat > app/google-services.json << 'EOF'
+          mkdir -p app
+          cat > app/google-services.json << 'GSJSON'
           {
-            "project_info": { "project_id": "dummy" },
-            "client": [{
-              "client_info": { "android_client_info": { "package_name": "com.vaulto" } },
-              "oauth_client": [],
-              "api_key": [{ "current_key": "dummy" }],
-              "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
-            }],
+            "project_info": {
+              "project_number": "000000000000",
+              "project_id": "vaulto-placeholder",
+              "storage_bucket": "vaulto-placeholder.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+                  "android_client_info": {
+                    "package_name": "com.vaulto"
+                  }
+                },
+                "oauth_client": [
+                  {
+                    "client_id": "000000000000-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com",
+                    "client_type": 3
+                  }
+                ],
+                "api_key": [
+                  {
+                    "current_key": "AIzaPlaceholderKeyForCIBuildOnly00000000"
+                  }
+                ],
+                "services": {
+                  "appinvite_service": {
+                    "other_platform_oauth_client": []
+                  }
+                }
+              }
+            ],
             "configuration_version": "1"
           }
-          EOF
+          GSJSON
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
 
       - name: Build Debug APK
-        run: gradle assembleDebug
+        run: ./gradlew assembleDebug --stacktrace
 
-      - name: Upload APK
+      - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: debug-apk
+          name: vaulto-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
