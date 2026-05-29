@@ -61,8 +61,10 @@ jobs:
           }
           GSJSON
 
-      - name: Make gradlew executable
-        run: chmod +x ./gradlew
+      - name: Fix gradlew permissions
+        run: |
+          sed -i 's/\r//' gradlew
+          chmod +x gradlew
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace
