@@ -1,3 +1,26 @@
+![Android](https://img.shields.io/badge/Platform-Android-green)
+
+
+
+
+![Kotlin](https://img.shields.io/badge/Language-Kotlin-purple)
+
+
+
+
+![Firebase](https://img.shields.io/badge/Backend-Firebase-orange)
+
+
+
+
+![License](https://img.shields.io/badge/License-MIT-blue)
+
+
+
+
+
+
+
 # 💰 Vaulto V2 — Family + Personal Budget App
 
 Real-time expense tracker with **Firebase** sync. Track family spending together and personal pocket money privately.
