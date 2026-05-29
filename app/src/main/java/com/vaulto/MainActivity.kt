@@ -46,7 +46,7 @@ fun VaultoApp(viewModel: MainViewModel) {
                 onSignIn = {
                     isLoading = true
                     error = null
-                    viewModel.signInWithGoogle("YOUR_WEB_CLIENT_ID_HERE") { success ->
+                    viewModel.signInWithGoogle("329764161199-1qsl67npq34p0sj81ha7an7b2svhm8b5.apps.googleusercontent.com") { success ->
                         isLoading = false
                         if (success) {
                             navController.navigate("family_setup") {
