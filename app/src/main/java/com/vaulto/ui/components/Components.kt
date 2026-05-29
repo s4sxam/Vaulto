@@ -135,6 +135,7 @@ fun BudgetCard(
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun ExpenseRow(
     emoji: String, category: String, note: String, amount: Double,
@@ -183,7 +184,7 @@ fun CategoryChip(emoji: String, name: String, selected: Boolean, onClick: () -> 
     val bg by animateColorAsState(if (selected) Saffron else MaterialTheme.colorScheme.surfaceVariant, label = "chip")
     val tx by animateColorAsState(if (selected) Color.White else TextPrimary, label = "chipTx")
     Surface(onClick = onClick, shape = RoundedCornerShape(50), color = bg, modifier = Modifier.height(40.dp)) {
-        Row(Modifier.padding(horizontal = 14.dp), Alignment.CenterVertically, Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.padding(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(emoji, fontSize = 16.sp)
             Text(name, style = MaterialTheme.typography.labelLarge, color = tx)
         }
