@@ -21,6 +21,9 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
       - name: Create google-services.json (CI placeholder)
         run: |
           mkdir -p app
@@ -61,13 +64,16 @@ jobs:
           }
           GSJSON
 
-      - name: Fix gradlew permissions
+      - name: Fix and verify gradlew
         run: |
-          sed -i 's/\r//' gradlew
-          chmod +x gradlew
+          cp gradlew gradlew.bak
+          sed 's/\r//' gradlew.bak > gradlew
+          chmod 755 gradlew
+          ls -la gradlew
+          head -1 gradlew
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: bash gradlew assembleDebug --stacktrace
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
