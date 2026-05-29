@@ -21,16 +21,6 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.7'
-
-      # ── Create a minimal but VALID google-services.json so the
-      #    processGoogleServices task passes in CI.
-      #    The 'project_number' field is REQUIRED by the plugin —
-      #    its absence is what caused the original build failure.
-      #    Replace all dummy values when wiring a real Firebase project.
       - name: Create google-services.json (CI placeholder)
         run: |
           mkdir -p app
