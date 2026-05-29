@@ -10,5 +10,11 @@
 local.properties
 *.jks
 *.keystore
+
 # Never commit this — contains your Firebase secrets
 google-services.json
+
+# Keep the Gradle wrapper JAR — it is required for CI to resolve GradleWrapperMain.
+# gradle-wrapper.jar must be committed; it is a ~60 KB bootstrap binary, not a secret.
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
