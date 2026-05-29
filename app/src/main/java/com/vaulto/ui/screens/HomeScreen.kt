@@ -158,7 +158,7 @@ fun HomeScreen(
 @Composable
 fun MiniStat(emoji: String, label: String, value: String, modifier: Modifier = Modifier) {
     Surface(modifier, RoundedCornerShape(16.dp), color = CardBg, shadowElevation = 2.dp) {
-        Row(Modifier.padding(14.dp), Alignment.CenterVertically, Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(emoji, fontSize = 24.sp)
             Column {
                 Text(value, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
