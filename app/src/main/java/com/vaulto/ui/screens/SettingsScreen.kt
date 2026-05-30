@@ -19,7 +19,6 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.*
-import com.vaulto.data.model.SpaceType
 import com.vaulto.ui.components.formatRupees
 import com.vaulto.ui.theme.*
 import com.vaulto.viewmodel.MainViewModel
@@ -31,35 +30,50 @@ private val EMOJIS = listOf("👨","👩","👦","👧","👴","👵","🧑","�
 fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
     val profile by viewModel.profile.collectAsState()
     val family  by viewModel.family.collectAsState()
-    val budget  by viewModel.currentBudget.collectAsState()
-    val space   by viewModel.activeSpace.collectAsState()
+
+    // ✅ BUG 10 FIX: Use personalBudget — a flow that is independent of the
+    //    active space toggle. The original code showed ₹0 whenever the user
+    //    had "Family" space selected when navigating to Settings, because
+    //    `currentBudget` reflects the active space.
+    val personalBudget by viewModel.personalBudget.collectAsState()
 
     var personalBudgetInput by remember { mutableStateOf("") }
     var familyBudgetInput   by remember { mutableStateOf("") }
     val clipboard = LocalClipboardManager.current
-    var copied by remember { mutableStateOf(false) }
+    var copied    by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = Cream,
         topBar = {
             TopAppBar(
-                title = { Text("Settings", fontWeight = FontWeight.Bold) },
+                title          = { Text("Settings", fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, null) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Cream)
+                colors         = TopAppBarDefaults.topAppBarColors(containerColor = Cream)
             )
         }
     ) { padding ->
         Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
+            Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Profile
+            // ── Profile ──────────────────────────────────────────────────────
             SettingsSection("Your Profile") {
-                Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    Arrangement.SpaceBetween,
+                    Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment     = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
                         Text(profile?.emoji ?: "👤", fontSize = 36.sp)
                         Column {
-                            Text(profile?.name ?: "", style = MaterialTheme.typography.titleLarge, color = TextPrimary)
+                            Text(profile?.name  ?: "", style = MaterialTheme.typography.titleLarge, color = TextPrimary)
                             Text(profile?.email ?: "", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
                         }
                     }
@@ -69,50 +83,71 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(EMOJIS) { emoji ->
                         Surface(
-                            onClick = { viewModel.updateEmoji(emoji) },
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (profile?.emoji == emoji) Saffron else MaterialTheme.colorScheme.surfaceVariant,
+                            onClick  = { viewModel.updateEmoji(emoji) },
+                            shape    = RoundedCornerShape(12.dp),
+                            color    = if (profile?.emoji == emoji) Saffron else MaterialTheme.colorScheme.surfaceVariant,
                             modifier = Modifier.size(44.dp)
-                        ) { Box(Modifier.fillMaxSize(), Alignment.Center) { Text(emoji, fontSize = 22.sp) } }
+                        ) {
+                            Box(Modifier.fillMaxSize(), Alignment.Center) {
+                                Text(emoji, fontSize = 22.sp)
+                            }
+                        }
                     }
                 }
             }
 
-            // Personal budget
+            // ── Personal budget ──────────────────────────────────────────────
             SettingsSection("🔒 Personal Budget") {
-                Text("Current: ${formatRupees(if (space == SpaceType.PERSONAL) budget else 0.0)}", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                // ✅ BUG 10 FIX: Shows the real personal budget, not the active-space budget.
+                Text(
+                    "Current: ${formatRupees(personalBudget)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
-                        value = personalBudgetInput, onValueChange = { personalBudgetInput = it },
-                        label = { Text("New Monthly Budget (₹)") },
+                        value         = personalBudgetInput,
+                        onValueChange = { personalBudgetInput = it },
+                        label         = { Text("New Monthly Budget (₹)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp),
-                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = PersonalPurple, focusedLabelColor = PersonalPurple),
+                        modifier      = Modifier.weight(1f),
+                        shape         = RoundedCornerShape(14.dp),
+                        colors        = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = PersonalPurple,
+                            focusedLabelColor  = PersonalPurple
+                        ),
                         singleLine = true
                     )
                     Button(
                         onClick = {
-                            personalBudgetInput.toDoubleOrNull()?.let { viewModel.setPersonalBudget(it); personalBudgetInput = "" }
+                            personalBudgetInput.toDoubleOrNull()?.let {
+                                viewModel.setPersonalBudget(it)
+                                personalBudgetInput = ""
+                            }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = PersonalPurple),
-                        shape = RoundedCornerShape(14.dp),
+                        colors   = ButtonDefaults.buttonColors(containerColor = PersonalPurple),
+                        shape    = RoundedCornerShape(14.dp),
                         modifier = Modifier.align(Alignment.CenterVertically)
                     ) { Text("Set") }
                 }
             }
 
-            // Family section
+            // ── Family section ───────────────────────────────────────────────
             family?.let { fam ->
                 SettingsSection("👨‍👩‍👧‍👦 Family: ${fam.name}") {
-                    // Family ID to share
                     Surface(shape = RoundedCornerShape(12.dp), color = FamilyBlue.copy(.08f)) {
                         Row(
                             Modifier.fillMaxWidth().padding(12.dp),
-                            Arrangement.SpaceBetween, Alignment.CenterVertically
+                            Arrangement.SpaceBetween,
+                            Alignment.CenterVertically
                         ) {
                             Column {
                                 Text("Family ID", style = MaterialTheme.typography.labelLarge, color = FamilyBlue)
-                                Text(fam.id.take(16) + "...", style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+                                Text(
+                                    fam.id.take(16) + "...",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = TextPrimary
+                                )
                             }
                             IconButton(onClick = {
                                 clipboard.setText(AnnotatedString(fam.id))
@@ -120,46 +155,55 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                             }) {
                                 Icon(
                                     if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
-                                    null, tint = FamilyBlue
+                                    null,
+                                    tint = FamilyBlue
                                 )
                             }
                         }
                     }
                     Text(
                         "Share this Family ID with family members so they can join in the app.",
-                        style = MaterialTheme.typography.bodyMedium, color = TextSecondary
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary
                     )
-                    // Family budget
                     Spacer(Modifier.height(4.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
-                            value = familyBudgetInput, onValueChange = { familyBudgetInput = it },
-                            label = { Text("Family Budget (₹)") },
-                            placeholder = { Text("Current: ${formatRupees(fam.monthlyBudget)}") },
+                            value         = familyBudgetInput,
+                            onValueChange = { familyBudgetInput = it },
+                            label         = { Text("Family Budget (₹)") },
+                            placeholder   = { Text("Current: ${formatRupees(fam.monthlyBudget)}") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp),
-                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = FamilyBlue, focusedLabelColor = FamilyBlue),
+                            modifier      = Modifier.weight(1f),
+                            shape         = RoundedCornerShape(14.dp),
+                            colors        = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = FamilyBlue,
+                                focusedLabelColor  = FamilyBlue
+                            ),
                             singleLine = true
                         )
                         Button(
                             onClick = {
-                                familyBudgetInput.toDoubleOrNull()?.let { viewModel.updateFamilyBudget(it); familyBudgetInput = "" }
+                                familyBudgetInput.toDoubleOrNull()?.let {
+                                    viewModel.updateFamilyBudget(it)
+                                    familyBudgetInput = ""
+                                }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = FamilyBlue),
-                            shape = RoundedCornerShape(14.dp),
+                            colors   = ButtonDefaults.buttonColors(containerColor = FamilyBlue),
+                            shape    = RoundedCornerShape(14.dp),
                             modifier = Modifier.align(Alignment.CenterVertically)
                         ) { Text("Update") }
                     }
                 }
             }
 
-            // Sign out
+            // ── Sign out ─────────────────────────────────────────────────────
             Spacer(Modifier.height(8.dp))
             OutlinedButton(
-                onClick = { viewModel.signOut() },
+                onClick  = { viewModel.signOut() },
                 modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFD32F2F))
+                shape    = RoundedCornerShape(14.dp),
+                colors   = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFD32F2F))
             ) {
                 Icon(Icons.Rounded.Logout, null)
                 Spacer(Modifier.width(8.dp))
@@ -172,7 +216,10 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
 @Composable
 fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
     Surface(shape = RoundedCornerShape(20.dp), color = CardBg, shadowElevation = 2.dp) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
             Text(title, style = MaterialTheme.typography.titleLarge, color = TextPrimary, fontWeight = FontWeight.Bold)
             HorizontalDivider(color = DividerColor)
             content()
