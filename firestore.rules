@@ -1,0 +1,81 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ──────────────────────────────────────────────────
+
+    // Returns true if the request is from a signed-in user.
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Returns true if the requesting user owns the document (uid matches).
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Returns true if the requesting user is a member of the given family.
+    function isFamilyMember(familyId) {
+      return isSignedIn() &&
+        request.auth.uid in get(/databases/$(database)/documents/families/$(familyId)).data.members;
+    }
+
+    // ── Users ─────────────────────────────────────────────────────────────
+    match /users/{uid} {
+      // A user can read and write only their own profile.
+      allow read, write: if isOwner(uid);
+
+      // Custom categories sub-collection.
+      match /categories/{catId} {
+        allow read, write: if isOwner(uid);
+      }
+    }
+
+    // ── Families ──────────────────────────────────────────────────────────
+    match /families/{familyId} {
+      // Any signed-in user can read a family document (needed to validate
+      // a join code before adding the user as a member).
+      allow read: if isSignedIn();
+
+      // Only the family creator can create the document.
+      allow create: if isSignedIn() &&
+        request.resource.data.createdBy == request.auth.uid;
+
+      // Members can update (e.g. add a new member, change budget).
+      // We don't allow deletion to prevent accidental data loss.
+      allow update: if isFamilyMember(familyId);
+      allow delete: if false;
+    }
+
+    // ── Budgets ───────────────────────────────────────────────────────────
+    match /budgets/{budgetId} {
+      // Budget documents are keyed as "{uid}_{month}_{year}".
+      // Only the owning user may read or write their personal budget.
+      allow read, write: if isSignedIn() &&
+        budgetId.matches(request.auth.uid + '_.*');
+    }
+
+    // ── Expenses ──────────────────────────────────────────────────────────
+    match /expenses/{expenseId} {
+      // Reading: user can read their own personal expenses, or any expense
+      // that belongs to a family they are a member of.
+      allow read: if isSignedIn() && (
+        resource.data.userId   == request.auth.uid ||
+        (resource.data.spaceType == 'FAMILY' &&
+         isFamilyMember(resource.data.familyId))
+      );
+
+      // Creating: user can only create expenses attributed to themselves.
+      allow create: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid;
+
+      // Deleting: only the user who created the expense may delete it.
+      allow delete: if isSignedIn() &&
+        resource.data.userId == request.auth.uid;
+
+      // No updates — expenses are immutable once written.
+      allow update: if false;
+    }
+  }
+}
