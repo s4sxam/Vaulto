@@ -14,6 +14,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
@@ -35,8 +37,8 @@ fun formatDate(ts: Long): String =
 @Composable
 fun SpaceToggle(active: SpaceType, onToggle: (SpaceType) -> Unit) {
     Surface(
-        shape = RoundedCornerShape(50),
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape    = RoundedCornerShape(50),
+        color    = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.height(44.dp)
     ) {
         Row(modifier = Modifier.padding(4.dp)) {
@@ -50,17 +52,14 @@ fun SpaceToggle(active: SpaceType, onToggle: (SpaceType) -> Unit) {
 private fun SpaceTab(label: String, type: SpaceType, active: SpaceType, onToggle: (SpaceType) -> Unit) {
     val bg by animateColorAsState(
         if (active == type) if (type == SpaceType.FAMILY) FamilyBlue else PersonalPurple
-        else Color.Transparent, label = "tabBg"
+        else Color.Transparent,
+        label = "tabBg"
     )
-    Surface(
-        onClick = { onToggle(type) },
-        shape = RoundedCornerShape(50),
-        color = bg
-    ) {
+    Surface(onClick = { onToggle(type) }, shape = RoundedCornerShape(50), color = bg) {
         Text(
             label,
-            style = MaterialTheme.typography.labelLarge,
-            color = if (active == type) Color.White else TextSecondary,
+            style    = MaterialTheme.typography.labelLarge,
+            color    = if (active == type) Color.White else TextSecondary,
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
         )
     }
@@ -76,15 +75,16 @@ fun BudgetCard(
     remaining: Double,
     modifier: Modifier = Modifier
 ) {
-    val over = remaining < 0
+    val over     = remaining < 0
     val progress by animateFloatAsState(
         if (budget > 0) (spent / budget).coerceIn(0.0, 1.0).toFloat() else 0f,
-        animationSpec = tween(900, easing = EaseOutCubic), label = "prog"
+        animationSpec = tween(900, easing = EaseOutCubic),
+        label         = "prog"
     )
     val gradColors = when {
-        over -> listOf(Color(0xFFD32F2F), Color(0xFFE57373))
-        spaceType == SpaceType.FAMILY -> listOf(FamilyBlue, Color(0xFF6AAEFF))
-        else -> listOf(PersonalPurple, Color(0xFFCE93D8))
+        over                           -> listOf(Color(0xFFD32F2F), Color(0xFFE57373))
+        spaceType == SpaceType.FAMILY  -> listOf(FamilyBlue, Color(0xFF6AAEFF))
+        else                           -> listOf(PersonalPurple, Color(0xFFCE93D8))
     }
 
     Box(
@@ -112,19 +112,33 @@ fun BudgetCard(
                     }
                 }
                 Surface(shape = RoundedCornerShape(12.dp), color = Color.White.copy(.2f)) {
-                    Text(formatRupees(budget), style = MaterialTheme.typography.titleMedium,
-                        color = Color.White, modifier = Modifier.padding(12.dp, 6.dp))
+                    Text(
+                        formatRupees(budget),
+                        style    = MaterialTheme.typography.titleMedium,
+                        color    = Color.White,
+                        modifier = Modifier.padding(12.dp, 6.dp)
+                    )
                 }
             }
             Spacer(Modifier.height(18.dp))
             Text(
                 if (over) "Over by ${formatRupees(-remaining)}" else formatRupees(remaining),
-                style = MaterialTheme.typography.displayMedium, color = Color.White, fontWeight = FontWeight.ExtraBold
+                style      = MaterialTheme.typography.displayMedium,
+                color      = Color.White,
+                fontWeight = FontWeight.ExtraBold
             )
             Text("remaining", style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(.8f))
             Spacer(Modifier.height(14.dp))
-            Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(.25f))) {
-                Box(Modifier.fillMaxWidth(progress).fillMaxHeight().clip(RoundedCornerShape(50)).background(Color.White))
+            Box(
+                Modifier.fillMaxWidth().height(8.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.White.copy(.25f))
+            ) {
+                Box(
+                    Modifier.fillMaxWidth(progress).fillMaxHeight()
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.White)
+                )
             }
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
@@ -135,46 +149,87 @@ fun BudgetCard(
     }
 }
 
+// ✅ BUG 7 FIX: Added `modifier` parameter so the caller (HomeScreen) can supply
+//    horizontal padding. Previously, padding was incorrectly applied to a Spacer
+//    between rows, which is a no-op. Now the modifier carries the layout padding.
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun ExpenseRow(
-    emoji: String, category: String, note: String, amount: Double,
-    date: Long, memberName: String, showMember: Boolean,
-    onDelete: () -> Unit
+    emoji: String,
+    category: String,
+    note: String,
+    amount: Double,
+    date: Long,
+    memberName: String,
+    showMember: Boolean,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier   // ← new param
 ) {
-    var showDel by remember { mutableStateOf(false) }
+    var showDel      by remember { mutableStateOf(false) }
+    val haptic        = LocalHapticFeedback.current
+
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = CardBg,
+        modifier        = modifier.fillMaxWidth(),   // ← modifier applied here
+        shape           = RoundedCornerShape(16.dp),
+        color           = CardBg,
         shadowElevation = 2.dp
     ) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .combinedClickable(onClick = {}, onLongClick = { showDel = !showDel })
+                .combinedClickable(
+                    onClick     = {},
+                    onLongClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        showDel = !showDel
+                    }
+                )
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
-                Modifier.size(48.dp).clip(RoundedCornerShape(14.dp))
+                Modifier.size(48.dp)
+                    .clip(RoundedCornerShape(14.dp))
                     .background(MaterialTheme.colorScheme.primaryContainer),
                 Alignment.Center
             ) { Text(emoji, fontSize = 22.sp) }
+
             Spacer(Modifier.width(12.dp))
+
             Column(Modifier.weight(1f)) {
                 Text(category, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                if (note.isNotBlank()) Text(note, style = MaterialTheme.typography.bodyMedium, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (note.isNotBlank()) {
+                    Text(
+                        note,
+                        style    = MaterialTheme.typography.bodyMedium,
+                        color    = TextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (showMember) Text("$memberName •", style = MaterialTheme.typography.labelSmall, color = FamilyBlue)
+                    if (showMember) {
+                        Text("$memberName •", style = MaterialTheme.typography.labelSmall, color = FamilyBlue)
+                    }
                     Text(formatDate(date), style = MaterialTheme.typography.labelSmall, color = TextSecondary.copy(.7f))
                 }
             }
-            if (showDel) IconButton(onClick = onDelete) {
-                Icon(Icons.Rounded.Delete, null, tint = Color(0xFFD32F2F))
+
+            if (showDel) {
+                IconButton(onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onDelete()
+                }) {
+                    Icon(Icons.Rounded.Delete, null, tint = Color(0xFFD32F2F))
+                }
             }
-            Text("- ${formatRupees(amount)}", style = MaterialTheme.typography.titleMedium,
-                color = Color(0xFFD32F2F), fontWeight = FontWeight.Bold)
+
+            Text(
+                "- ${formatRupees(amount)}",
+                style      = MaterialTheme.typography.titleMedium,
+                color      = Color(0xFFD32F2F),
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
@@ -183,8 +238,17 @@ fun ExpenseRow(
 fun CategoryChip(emoji: String, name: String, selected: Boolean, onClick: () -> Unit) {
     val bg by animateColorAsState(if (selected) Saffron else MaterialTheme.colorScheme.surfaceVariant, label = "chip")
     val tx by animateColorAsState(if (selected) Color.White else TextPrimary, label = "chipTx")
-    Surface(onClick = onClick, shape = RoundedCornerShape(50), color = bg, modifier = Modifier.height(40.dp)) {
-        Row(Modifier.padding(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+    Surface(
+        onClick  = onClick,
+        shape    = RoundedCornerShape(50),
+        color    = bg,
+        modifier = Modifier.height(40.dp)
+    ) {
+        Row(
+            Modifier.padding(horizontal = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment     = Alignment.CenterVertically
+        ) {
             Text(emoji, fontSize = 16.sp)
             Text(name, style = MaterialTheme.typography.labelLarge, color = tx)
         }
