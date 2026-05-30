@@ -1,3 +1,5 @@
+// FILE PATH: app/src/main/java/com/vaulto/ui/components/Components.kt
+
 package com.vaulto.ui.components
 
 import androidx.compose.animation.animateColorAsState
@@ -25,6 +27,8 @@ import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
 
+// ── Formatters ────────────────────────────────────────────────────────────────
+
 fun formatRupees(amount: Double): String {
     val f = NumberFormat.getNumberInstance(Locale("en", "IN"))
     f.maximumFractionDigits = 0
@@ -33,6 +37,8 @@ fun formatRupees(amount: Double): String {
 
 fun formatDate(ts: Long): String =
     SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(Date(ts))
+
+// ── Space Toggle ──────────────────────────────────────────────────────────────
 
 @Composable
 fun SpaceToggle(active: SpaceType, onToggle: (SpaceType) -> Unit) {
@@ -49,10 +55,16 @@ fun SpaceToggle(active: SpaceType, onToggle: (SpaceType) -> Unit) {
 }
 
 @Composable
-private fun SpaceTab(label: String, type: SpaceType, active: SpaceType, onToggle: (SpaceType) -> Unit) {
+private fun SpaceTab(
+    label: String,
+    type: SpaceType,
+    active: SpaceType,
+    onToggle: (SpaceType) -> Unit
+) {
     val bg by animateColorAsState(
-        if (active == type) if (type == SpaceType.FAMILY) FamilyBlue else PersonalPurple
-        else Color.Transparent,
+        targetValue = if (active == type) {
+            if (type == SpaceType.FAMILY) FamilyBlue else PersonalPurple
+        } else Color.Transparent,
         label = "tabBg"
     )
     Surface(onClick = { onToggle(type) }, shape = RoundedCornerShape(50), color = bg) {
@@ -64,6 +76,8 @@ private fun SpaceTab(label: String, type: SpaceType, active: SpaceType, onToggle
         )
     }
 }
+
+// ── Budget Card ───────────────────────────────────────────────────────────────
 
 @Composable
 fun BudgetCard(
@@ -77,14 +91,14 @@ fun BudgetCard(
 ) {
     val over     = remaining < 0
     val progress by animateFloatAsState(
-        if (budget > 0) (spent / budget).coerceIn(0.0, 1.0).toFloat() else 0f,
+        targetValue   = if (budget > 0) (spent / budget).coerceIn(0.0, 1.0).toFloat() else 0f,
         animationSpec = tween(900, easing = EaseOutCubic),
         label         = "prog"
     )
     val gradColors = when {
-        over                           -> listOf(Color(0xFFD32F2F), Color(0xFFE57373))
-        spaceType == SpaceType.FAMILY  -> listOf(FamilyBlue, Color(0xFF6AAEFF))
-        else                           -> listOf(PersonalPurple, Color(0xFFCE93D8))
+        over                          -> listOf(Color(0xFFD32F2F), Color(0xFFE57373))
+        spaceType == SpaceType.FAMILY -> listOf(FamilyBlue, Color(0xFF6AAEFF))
+        else                          -> listOf(PersonalPurple, Color(0xFFCE93D8))
     }
 
     Box(
@@ -107,7 +121,8 @@ fun BudgetCard(
                         Text(title, style = MaterialTheme.typography.titleLarge, color = Color.White)
                         Text(
                             if (spaceType == SpaceType.FAMILY) "Family Budget" else "Pocket Money",
-                            style = MaterialTheme.typography.labelSmall, color = Color.White.copy(.75f)
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(.75f)
                         )
                     }
                 }
@@ -142,17 +157,24 @@ fun BudgetCard(
             }
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
-                Text("Spent: ${formatRupees(spent)}", style = MaterialTheme.typography.labelLarge, color = Color.White.copy(.9f))
-                Text("${(progress * 100).toInt()}% used", style = MaterialTheme.typography.labelLarge, color = Color.White.copy(.9f))
+                Text(
+                    "Spent: ${formatRupees(spent)}",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Color.White.copy(.9f)
+                )
+                Text(
+                    "${(progress * 100).toInt()}% used",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Color.White.copy(.9f)
+                )
             }
         }
     }
 }
 
-// ✅ BUG 7 FIX: Added `modifier` parameter so the caller (HomeScreen) can supply
-//    horizontal padding. Previously, padding was incorrectly applied to a Spacer
-//    between rows, which is a no-op. Now the modifier carries the layout padding.
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+// ── Expense Row ───────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ExpenseRow(
     emoji: String,
@@ -163,13 +185,13 @@ fun ExpenseRow(
     memberName: String,
     showMember: Boolean,
     onDelete: () -> Unit,
-    modifier: Modifier = Modifier   // ← new param
+    modifier: Modifier = Modifier
 ) {
-    var showDel      by remember { mutableStateOf(false) }
-    val haptic        = LocalHapticFeedback.current
+    var showDel by remember { mutableStateOf(false) }
+    val haptic   = LocalHapticFeedback.current
 
     Surface(
-        modifier        = modifier.fillMaxWidth(),   // ← modifier applied here
+        modifier        = modifier.fillMaxWidth(),
         shape           = RoundedCornerShape(16.dp),
         color           = CardBg,
         shadowElevation = 2.dp
@@ -178,7 +200,12 @@ fun ExpenseRow(
             Modifier
                 .fillMaxWidth()
                 .combinedClickable(
-                    onClick     = {},
+                    onClick = {
+                        // ✅ FIX: Tapping anywhere on the row dismisses the delete button.
+                        //    Previously there was no way to dismiss it once shown — the
+                        //    user had to long-press again, which feels broken.
+                        if (showDel) showDel = false
+                    },
                     onLongClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         showDel = !showDel
@@ -188,7 +215,8 @@ fun ExpenseRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
-                Modifier.size(48.dp)
+                Modifier
+                    .size(48.dp)
                     .clip(RoundedCornerShape(14.dp))
                     .background(MaterialTheme.colorScheme.primaryContainer),
                 Alignment.Center
@@ -211,7 +239,11 @@ fun ExpenseRow(
                     if (showMember) {
                         Text("$memberName •", style = MaterialTheme.typography.labelSmall, color = FamilyBlue)
                     }
-                    Text(formatDate(date), style = MaterialTheme.typography.labelSmall, color = TextSecondary.copy(.7f))
+                    Text(
+                        formatDate(date),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextSecondary.copy(.7f)
+                    )
                 }
             }
 
@@ -220,7 +252,11 @@ fun ExpenseRow(
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     onDelete()
                 }) {
-                    Icon(Icons.Rounded.Delete, null, tint = Color(0xFFD32F2F))
+                    Icon(
+                        Icons.Rounded.Delete,
+                        contentDescription = "Delete expense",
+                        tint               = Color(0xFFD32F2F)
+                    )
                 }
             }
 
@@ -234,10 +270,16 @@ fun ExpenseRow(
     }
 }
 
+// ── Category Chip ─────────────────────────────────────────────────────────────
+
 @Composable
 fun CategoryChip(emoji: String, name: String, selected: Boolean, onClick: () -> Unit) {
-    val bg by animateColorAsState(if (selected) Saffron else MaterialTheme.colorScheme.surfaceVariant, label = "chip")
-    val tx by animateColorAsState(if (selected) Color.White else TextPrimary, label = "chipTx")
+    val bg by animateColorAsState(
+        if (selected) Saffron else MaterialTheme.colorScheme.surfaceVariant, label = "chip"
+    )
+    val tx by animateColorAsState(
+        if (selected) Color.White else TextPrimary, label = "chipTx"
+    )
     Surface(
         onClick  = onClick,
         shape    = RoundedCornerShape(50),
