@@ -1,5 +1,6 @@
 package com.vaulto.auth
 
+import android.app.Activity
 import android.content.Context
 import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
@@ -17,9 +18,7 @@ import kotlinx.coroutines.tasks.await
 
 class AuthRepository(context: Context) {
 
-    // ⚠️  Always hold applicationContext, never an Activity context.
-    //     Storing a raw Activity context here would leak the entire Activity
-    //     for the lifetime of this repository (which lives in the ViewModel).
+    // Always hold applicationContext for non-UI operations.
     private val appContext: Context = context.applicationContext
 
     private val auth = FirebaseAuth.getInstance()
@@ -38,7 +37,12 @@ class AuthRepository(context: Context) {
 
     // ─── SIGN IN ────────────────────────────────────────────────────────────
 
-    suspend fun signInWithGoogle(webClientId: String): Result<FirebaseUser> {
+    /**
+     * [activity] MUST be an Activity instance — CredentialManager's bottom-sheet
+     * requires an Activity context to attach its UI. Passing applicationContext
+     * causes a GetCredentialException and the "Sign-in failed" error.
+     */
+    suspend fun signInWithGoogle(activity: Activity, webClientId: String): Result<FirebaseUser> {
         return try {
             val credentialManager = CredentialManager.create(appContext)
 
@@ -51,8 +55,11 @@ class AuthRepository(context: Context) {
                 .addCredentialOption(googleIdOption)
                 .build()
 
-            // This suspends until the user picks an account or cancels.
-            val result = credentialManager.getCredential(appContext, request)
+            // ✅ CRITICAL FIX: pass the Activity, not applicationContext.
+            //    CredentialManager needs an Activity to show the account picker
+            //    bottom-sheet. Using applicationContext here was the root cause of
+            //    "Sign-in failed. Please try again." shown in the screenshot.
+            val result = credentialManager.getCredential(activity, request)
 
             val googleIdToken = GoogleIdTokenCredential
                 .createFrom(result.credential.data)
@@ -77,7 +84,7 @@ class AuthRepository(context: Context) {
             Result.success(user)
 
         } catch (e: GetCredentialException) {
-            // User cancelled, no accounts available, etc.
+            // User cancelled, no accounts available, or Activity context missing.
             Result.failure(e)
         } catch (e: Exception) {
             Result.failure(e)
