@@ -1,5 +1,6 @@
 package com.vaulto.viewmodel
 
+import android.app.Activity
 import android.app.Application
 import androidx.lifecycle.*
 import com.google.firebase.auth.FirebaseUser
@@ -7,6 +8,7 @@ import com.vaulto.auth.AuthRepository
 import com.vaulto.data.model.*
 import com.vaulto.data.repository.BudgetRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -68,28 +70,69 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }.flatMapLatest { it }
      .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
+    // ✅ BUG 10 FIX: Separate personal budget flow that is independent of the
+    //    active space. Settings screen must always show the real personal budget
+    //    even when the user has Family space selected.
+    val personalBudget: StateFlow<Double> = combine(currentUser, _month, _year) { user, m, y ->
+        if (user != null) budgetRepo.getPersonalBudgetFlow(user.uid, m, y) else flowOf(0.0)
+    }.flatMapLatest { it }
+     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
     val remaining: StateFlow<Double> = combine(currentBudget, totalSpent) { b, s -> b - s }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
+    // ✅ BUG 3 FIX: Track the profile-loading job so we can cancel it before
+    //    starting a new one. The original code launched a new coroutine on every
+    //    currentUser emission without cancelling the previous one, leading to
+    //    multiple concurrent Firestore listeners on getFamilyFlow().
+    private var profileJob: Job? = null
+
     init {
         viewModelScope.launch {
-            currentUser.collect { user -> if (user != null) loadProfile(user.uid) }
+            // ✅ Use collectLatest so that if currentUser emits a new value before
+            //    the previous block finishes, the previous block is cancelled.
+            currentUser.collectLatest { user ->
+                if (user != null) {
+                    loadProfile(user.uid)
+                } else {
+                    // User signed out — clear local state.
+                    _profile.value = null
+                    _family.value  = null
+                }
+            }
         }
     }
 
-    private fun loadProfile(uid: String) = viewModelScope.launch {
-        val p = authRepo.getUserProfile(uid) ?: return@launch
-        _profile.value = p
-        if (p.familyId.isNotBlank()) {
-            budgetRepo.getFamilyFlow(p.familyId).collect { _family.value = it }
+    private fun loadProfile(uid: String) {
+        // Cancel any in-flight profile/family listener before starting a new one.
+        profileJob?.cancel()
+        profileJob = viewModelScope.launch {
+            val p = authRepo.getUserProfile(uid) ?: return@launch
+            _profile.value = p
+            if (p.familyId.isNotBlank()) {
+                // collect (not collectLatest) here is fine — profileJob itself
+                // is cancelled when a new profile load is triggered.
+                budgetRepo.getFamilyFlow(p.familyId).collect { _family.value = it }
+            }
         }
     }
 
-    fun signInWithGoogle(webClientId: String, onResult: (Boolean) -> Unit) = viewModelScope.launch {
-        onResult(authRepo.signInWithGoogle(webClientId).isSuccess)
-    }
+    // ✅ BUG 1 FIX: Accept Activity so AuthRepository can pass it to
+    //    CredentialManager.getCredential(). applicationContext caused the sign-in
+    //    bottom-sheet to fail silently, producing "Sign-in failed".
+    fun signInWithGoogle(activity: Activity, webClientId: String, onResult: (Boolean) -> Unit) =
+        viewModelScope.launch {
+            onResult(authRepo.signInWithGoogle(activity, webClientId).isSuccess)
+        }
 
-    fun signOut() { authRepo.signOut(); _profile.value = null; _family.value = null }
+    // ✅ BUG 6: signOut() clears state here; navigation back to "login" is driven
+    //    by the LaunchedEffect(currentUser) in VaultoApp (see MainActivity.kt).
+    fun signOut() {
+        profileJob?.cancel()
+        authRepo.signOut()
+        // _profile and _family are cleared by the collectLatest block above
+        // when currentUser emits null after signOut().
+    }
 
     fun createFamily(name: String, budget: Double) = viewModelScope.launch {
         val uid = currentUser.value?.uid ?: return@launch
