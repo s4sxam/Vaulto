@@ -1,6 +1,7 @@
 package com.vaulto.data.repository
 
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.Query
 import com.vaulto.data.model.*
 import kotlinx.coroutines.channels.awaitClose
@@ -14,28 +15,27 @@ class BudgetRepository {
 
     // ─── DEFAULT CATEGORIES ────────────────────────────────────────────────
     val defaultCategories = listOf(
-        Category("cat_1",  "Shopping",     "🛒", "#FF6B6B", true),
-        Category("cat_2",  "UPI Payment",  "📱", "#4ECDC4", true),
-        Category("cat_3",  "Food & Dining","🍽️", "#FFBE0B", true),
-        Category("cat_4",  "Transport",    "🚗", "#3A86FF", true),
-        Category("cat_5",  "Medical",      "💊", "#FF006E", true),
-        Category("cat_6",  "Festival",     "🎉", "#AB47BC", true),
-        Category("cat_7",  "Vegetables",   "🥦", "#78C552", true),
-        Category("cat_8",  "Snacks",       "🥟", "#FF9F43", true),
+        Category("cat_1",  "Shopping",      "🛒",  "#FF6B6B", true),
+        Category("cat_2",  "UPI Payment",   "📱",  "#4ECDC4", true),
+        Category("cat_3",  "Food & Dining", "🍽️",  "#FFBE0B", true),
+        Category("cat_4",  "Transport",     "🚗",  "#3A86FF", true),
+        Category("cat_5",  "Medical",       "💊",  "#FF006E", true),
+        Category("cat_6",  "Festival",      "🎉",  "#AB47BC", true),
+        Category("cat_7",  "Vegetables",    "🥦",  "#78C552", true),
+        Category("cat_8",  "Snacks",        "🥟",  "#FF9F43", true),
     )
 
     // ─── FAMILY GROUP ───────────────────────────────────────────────────────
     suspend fun createFamily(creatorUid: String, familyName: String, budget: Double): String {
         val familyId = UUID.randomUUID().toString()
         val family = FamilyGroup(
-            id = familyId,
-            name = familyName,
-            createdBy = creatorUid,
-            members = listOf(creatorUid),
+            id            = familyId,
+            name          = familyName,
+            createdBy     = creatorUid,
+            members       = listOf(creatorUid),
             monthlyBudget = budget
         )
         db.collection("families").document(familyId).set(family).await()
-        // Link user to family
         db.collection("users").document(creatorUid).update("familyId", familyId).await()
         return familyId
     }
@@ -51,7 +51,12 @@ class BudgetRepository {
 
     fun getFamilyFlow(familyId: String): Flow<FamilyGroup?> = callbackFlow {
         val listener = db.collection("families").document(familyId)
-            .addSnapshotListener { snap, _ ->
+            .addSnapshotListener { snap, error ->
+                // ✅ BUG 5 FIX: Don't silently ignore Firestore errors.
+                if (error != null) {
+                    close(error)   // propagate to the collector
+                    return@addSnapshotListener
+                }
                 trySend(snap?.toObject(FamilyGroup::class.java))
             }
         awaitClose { listener.remove() }
@@ -72,7 +77,8 @@ class BudgetRepository {
     fun getPersonalBudgetFlow(uid: String, month: Int, year: Int): Flow<Double> = callbackFlow {
         val id = "${uid}_${month}_${year}"
         val listener = db.collection("budgets").document(id)
-            .addSnapshotListener { snap, _ ->
+            .addSnapshotListener { snap, error ->
+                if (error != null) { close(error); return@addSnapshotListener }
                 trySend(snap?.toObject(Budget::class.java)?.amount ?: 0.0)
             }
         awaitClose { listener.remove() }
@@ -82,7 +88,8 @@ class BudgetRepository {
     fun getUserCategoriesFlow(uid: String): Flow<List<Category>> = callbackFlow {
         val listener = db.collection("users").document(uid)
             .collection("categories")
-            .addSnapshotListener { snap, _ ->
+            .addSnapshotListener { snap, error ->
+                if (error != null) { close(error); return@addSnapshotListener }
                 val custom = snap?.toObjects(Category::class.java) ?: emptyList()
                 trySend(defaultCategories + custom)
             }
@@ -99,7 +106,7 @@ class BudgetRepository {
 
     // ─── EXPENSES ────────────────────────────────────────────────────────────
     suspend fun addExpense(expense: Expense) {
-        val id = UUID.randomUUID().toString()
+        val id    = UUID.randomUUID().toString()
         val final = expense.copy(id = id)
         db.collection("expenses").document(id).set(final).await()
     }
@@ -108,31 +115,45 @@ class BudgetRepository {
         db.collection("expenses").document(id).delete().await()
     }
 
-    // Personal expenses for a user/month/year
-    fun getPersonalExpensesFlow(uid: String, month: Int, year: Int): Flow<List<Expense>> = callbackFlow {
-        val listener = db.collection("expenses")
-            .whereEqualTo("spaceType", SpaceType.PERSONAL.name)
-            .whereEqualTo("userId", uid)
-            .whereEqualTo("month", month)
-            .whereEqualTo("year", year)
-            .orderBy("date", Query.Direction.DESCENDING)
-            .addSnapshotListener { snap, _ ->
-                trySend(snap?.toObjects(Expense::class.java) ?: emptyList())
-            }
-        awaitClose { listener.remove() }
-    }
+    // ✅ BUG 5 FIX: Propagate Firestore errors instead of silently swallowing them.
+    //
+    //    These queries use compound filters + orderBy("date"), which requires a
+    //    Firestore composite index. Without the index the query fails silently
+    //    (snap is null, _ was ignored). Now we surface the error so the UI can
+    //    show a meaningful message.
+    //
+    //    Required indexes to create in Firebase Console → Firestore → Indexes:
+    //      Collection: expenses
+    //      Index 1: spaceType ASC, userId ASC, month ASC, year ASC, date DESC
+    //      Index 2: spaceType ASC, familyId ASC, month ASC, year ASC, date DESC
 
-    // Family expenses for a family/month/year
-    fun getFamilyExpensesFlow(familyId: String, month: Int, year: Int): Flow<List<Expense>> = callbackFlow {
-        val listener = db.collection("expenses")
-            .whereEqualTo("spaceType", SpaceType.FAMILY.name)
-            .whereEqualTo("familyId", familyId)
-            .whereEqualTo("month", month)
-            .whereEqualTo("year", year)
-            .orderBy("date", Query.Direction.DESCENDING)
-            .addSnapshotListener { snap, _ ->
-                trySend(snap?.toObjects(Expense::class.java) ?: emptyList())
-            }
-        awaitClose { listener.remove() }
-    }
+    fun getPersonalExpensesFlow(uid: String, month: Int, year: Int): Flow<List<Expense>> =
+        callbackFlow {
+            val listener = db.collection("expenses")
+                .whereEqualTo("spaceType", SpaceType.PERSONAL.name)
+                .whereEqualTo("userId", uid)
+                .whereEqualTo("month", month)
+                .whereEqualTo("year", year)
+                .orderBy("date", Query.Direction.DESCENDING)
+                .addSnapshotListener { snap, error ->
+                    if (error != null) { close(error); return@addSnapshotListener }
+                    trySend(snap?.toObjects(Expense::class.java) ?: emptyList())
+                }
+            awaitClose { listener.remove() }
+        }
+
+    fun getFamilyExpensesFlow(familyId: String, month: Int, year: Int): Flow<List<Expense>> =
+        callbackFlow {
+            val listener = db.collection("expenses")
+                .whereEqualTo("spaceType", SpaceType.FAMILY.name)
+                .whereEqualTo("familyId", familyId)
+                .whereEqualTo("month", month)
+                .whereEqualTo("year", year)
+                .orderBy("date", Query.Direction.DESCENDING)
+                .addSnapshotListener { snap, error ->
+                    if (error != null) { close(error); return@addSnapshotListener }
+                    trySend(snap?.toObjects(Expense::class.java) ?: emptyList())
+                }
+            awaitClose { listener.remove() }
+        }
 }
