@@ -1,3 +1,5 @@
+// FILE PATH: app/src/main/java/com/vaulto/ui/screens/SettingsScreen.kt
+
 package com.vaulto.ui.screens
 
 import androidx.compose.foundation.layout.*
@@ -22,25 +24,33 @@ import androidx.compose.ui.unit.*
 import com.vaulto.ui.components.formatRupees
 import com.vaulto.ui.theme.*
 import com.vaulto.viewmodel.MainViewModel
+import kotlinx.coroutines.delay
 
-private val EMOJIS = listOf("👨","👩","👦","👧","👴","👵","🧑","🧒","🧔","👸","🤴","🧙","🦸","🧝","🧚")
+private val EMOJIS = listOf(
+    "👨", "👩", "👦", "👧", "👴", "👵",
+    "🧑", "🧒", "🧔", "👸", "🤴", "🧙", "🦸", "🧝", "🧚"
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
-    val profile by viewModel.profile.collectAsState()
-    val family  by viewModel.family.collectAsState()
-
-    // ✅ BUG 10 FIX: Use personalBudget — a flow that is independent of the
-    //    active space toggle. The original code showed ₹0 whenever the user
-    //    had "Family" space selected when navigating to Settings, because
-    //    `currentBudget` reflects the active space.
+    val profile        by viewModel.profile.collectAsState()
+    val family         by viewModel.family.collectAsState()
     val personalBudget by viewModel.personalBudget.collectAsState()
 
     var personalBudgetInput by remember { mutableStateOf("") }
     var familyBudgetInput   by remember { mutableStateOf("") }
-    val clipboard = LocalClipboardManager.current
-    var copied    by remember { mutableStateOf(false) }
+    val clipboard            = LocalClipboardManager.current
+    var copied              by remember { mutableStateOf(false) }
+
+    // ✅ FIX: Auto-reset the "copied" checkmark after 2 seconds so the icon
+    //    doesn't stay as a permanent checkmark for the rest of the session.
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(2_000)
+            copied = false
+        }
+    }
 
     Scaffold(
         containerColor = Cream,
@@ -73,8 +83,16 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                     ) {
                         Text(profile?.emoji ?: "👤", fontSize = 36.sp)
                         Column {
-                            Text(profile?.name  ?: "", style = MaterialTheme.typography.titleLarge, color = TextPrimary)
-                            Text(profile?.email ?: "", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                            Text(
+                                profile?.name  ?: "",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = TextPrimary
+                            )
+                            Text(
+                                profile?.email ?: "",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = TextSecondary
+                            )
                         }
                     }
                 }
@@ -85,7 +103,8 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                         Surface(
                             onClick  = { viewModel.updateEmoji(emoji) },
                             shape    = RoundedCornerShape(12.dp),
-                            color    = if (profile?.emoji == emoji) Saffron else MaterialTheme.colorScheme.surfaceVariant,
+                            color    = if (profile?.emoji == emoji) Saffron
+                                       else MaterialTheme.colorScheme.surfaceVariant,
                             modifier = Modifier.size(44.dp)
                         ) {
                             Box(Modifier.fillMaxSize(), Alignment.Center) {
@@ -98,7 +117,6 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
 
             // ── Personal budget ──────────────────────────────────────────────
             SettingsSection("🔒 Personal Budget") {
-                // ✅ BUG 10 FIX: Shows the real personal budget, not the active-space budget.
                 Text(
                     "Current: ${formatRupees(personalBudget)}",
                     style = MaterialTheme.typography.bodyMedium,
@@ -106,13 +124,13 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
-                        value         = personalBudgetInput,
-                        onValueChange = { personalBudgetInput = it },
-                        label         = { Text("New Monthly Budget (₹)") },
+                        value           = personalBudgetInput,
+                        onValueChange   = { personalBudgetInput = it },
+                        label           = { Text("New Monthly Budget (₹)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier      = Modifier.weight(1f),
-                        shape         = RoundedCornerShape(14.dp),
-                        colors        = OutlinedTextFieldDefaults.colors(
+                        modifier        = Modifier.weight(1f),
+                        shape           = RoundedCornerShape(14.dp),
+                        colors          = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = PersonalPurple,
                             focusedLabelColor  = PersonalPurple
                         ),
@@ -142,9 +160,13 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                             Alignment.CenterVertically
                         ) {
                             Column {
-                                Text("Family ID", style = MaterialTheme.typography.labelLarge, color = FamilyBlue)
                                 Text(
-                                    fam.id.take(16) + "...",
+                                    "Family ID",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = FamilyBlue
+                                )
+                                Text(
+                                    fam.id.take(16) + "…",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = TextPrimary
                                 )
@@ -155,7 +177,7 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                             }) {
                                 Icon(
                                     if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
-                                    null,
+                                    contentDescription = if (copied) "Copied" else "Copy Family ID",
                                     tint = FamilyBlue
                                 )
                             }
@@ -169,14 +191,14 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                     Spacer(Modifier.height(4.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
-                            value         = familyBudgetInput,
-                            onValueChange = { familyBudgetInput = it },
-                            label         = { Text("Family Budget (₹)") },
-                            placeholder   = { Text("Current: ${formatRupees(fam.monthlyBudget)}") },
+                            value           = familyBudgetInput,
+                            onValueChange   = { familyBudgetInput = it },
+                            label           = { Text("Family Budget (₹)") },
+                            placeholder     = { Text("Current: ${formatRupees(fam.monthlyBudget)}") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier      = Modifier.weight(1f),
-                            shape         = RoundedCornerShape(14.dp),
-                            colors        = OutlinedTextFieldDefaults.colors(
+                            modifier        = Modifier.weight(1f),
+                            shape           = RoundedCornerShape(14.dp),
+                            colors          = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = FamilyBlue,
                                 focusedLabelColor  = FamilyBlue
                             ),
@@ -220,7 +242,12 @@ fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) 
             Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(title, style = MaterialTheme.typography.titleLarge, color = TextPrimary, fontWeight = FontWeight.Bold)
+            Text(
+                title,
+                style      = MaterialTheme.typography.titleLarge,
+                color      = TextPrimary,
+                fontWeight = FontWeight.Bold
+            )
             HorizontalDivider(color = DividerColor)
             content()
         }
