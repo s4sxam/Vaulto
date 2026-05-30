@@ -1,3 +1,6 @@
+// FILE PATH: app/src/main/java/com/vaulto/ui/theme/Theme.kt
+// (Delete the old file at: app/src/main/java/com/vaulto/theme/Theme.kt)
+
 package com.vaulto.ui.theme
 
 import androidx.compose.material3.*
@@ -7,18 +10,18 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-// 🎨 Warm Indian palette
-val Saffron         = Color(0xFFFF6B00)
-val SaffronLight    = Color(0xFFFF8C3A)
-val SaffronDark     = Color(0xFFCC5500)
-val DeepGreen       = Color(0xFF1B8A4E)
-val Cream           = Color(0xFFFFF8F0)
-val CardBg          = Color(0xFFFFFFFF)
-val TextPrimary     = Color(0xFF1A1A2E)
-val TextSecondary   = Color(0xFF6B6B8A)
-val DividerColor    = Color(0xFFEEEAE4)
-val FamilyBlue      = Color(0xFF3A86FF)
-val PersonalPurple  = Color(0xFF9C27B0)
+// ── Warm Indian palette ───────────────────────────────────────────────────────
+val Saffron        = Color(0xFFFF6B00)
+val SaffronLight   = Color(0xFFFF8C3A)
+val SaffronDark    = Color(0xFFCC5500)
+val DeepGreen      = Color(0xFF1B8A4E)
+val Cream          = Color(0xFFFFF8F0)
+val CardBg         = Color(0xFFFFFFFF)
+val TextPrimary    = Color(0xFF1A1A2E)
+val TextSecondary  = Color(0xFF6B6B8A)
+val DividerColor   = Color(0xFFEEEAE4)
+val FamilyBlue     = Color(0xFF3A86FF)
+val PersonalPurple = Color(0xFF9C27B0)
 
 val BarColors = listOf(
     Color(0xFFFF6B6B), Color(0xFF4ECDC4), Color(0xFFFFBE0B),
@@ -27,20 +30,20 @@ val BarColors = listOf(
 )
 
 private val LightColors = lightColorScheme(
-    primary              = Saffron,
-    onPrimary            = Color.White,
-    primaryContainer     = Color(0xFFFFEDD8),
-    onPrimaryContainer   = SaffronDark,
-    secondary            = DeepGreen,
-    onSecondary          = Color.White,
-    secondaryContainer   = Color(0xFFD4F5E5),
-    background           = Cream,
-    onBackground         = TextPrimary,
-    surface              = Color(0xFFFFFBF7),
-    onSurface            = TextPrimary,
-    surfaceVariant       = Color(0xFFF5EFE6),
-    outline              = DividerColor,
-    error                = Color(0xFFD32F2F)
+    primary            = Saffron,
+    onPrimary          = Color.White,
+    primaryContainer   = Color(0xFFFFEDD8),
+    onPrimaryContainer = SaffronDark,
+    secondary          = DeepGreen,
+    onSecondary        = Color.White,
+    secondaryContainer = Color(0xFFD4F5E5),
+    background         = Cream,
+    onBackground       = TextPrimary,
+    surface            = Color(0xFFFFFBF7),
+    onSurface          = TextPrimary,
+    surfaceVariant     = Color(0xFFF5EFE6),
+    outline            = DividerColor,
+    error              = Color(0xFFD32F2F)
 )
 
 val AppTypography = Typography(
