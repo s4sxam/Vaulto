@@ -1,3 +1,5 @@
+// FILE PATH: app/src/main/java/com/vaulto/ui/screens/AnalyticsScreen.kt
+
 package com.vaulto.ui.screens
 
 import androidx.compose.foundation.background
@@ -17,9 +19,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
 import com.vaulto.data.model.SpaceType
+import com.vaulto.ui.components.DayBar
 import com.vaulto.ui.components.formatRupees
 import com.vaulto.ui.theme.*
 import com.vaulto.viewmodel.MainViewModel
+import java.text.SimpleDateFormat
+import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,6 +36,8 @@ fun AnalyticsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
     val space     by viewModel.activeSpace.collectAsState()
     val family    by viewModel.family.collectAsState()
     val profile   by viewModel.profile.collectAsState()
+    val month     by viewModel.month.collectAsState()
+    val year      by viewModel.year.collectAsState()
 
     // Group by category
     val byCategory = expenses.groupBy { it.categoryName }
@@ -42,13 +49,39 @@ fun AnalyticsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
         .mapValues { it.value.sumOf { e -> e.amount } }
         .entries.sortedByDescending { it.value }
 
+    // Day-by-day spending for the selected month
+    // Keys: day of month (1–31), values: total spent on that day
+    val byDay: Map<Int, Double> = remember(expenses) {
+        expenses.groupBy { exp ->
+            Calendar.getInstance().apply { timeInMillis = exp.date }.get(Calendar.DAY_OF_MONTH)
+        }.mapValues { entry -> entry.value.sumOf { it.amount } }
+    }
+
+    // Number of days in the selected month (for the chart x-axis)
+    val daysInMonth = remember(month, year) {
+        Calendar.getInstance().apply { set(year, month - 1, 1) }
+            .getActualMaximum(Calendar.DAY_OF_MONTH)
+    }
+
+    // Show only days 1..today for the current month; all days for past months
+    val nowCal = remember { Calendar.getInstance() }
+    val lastDay = remember(month, year, daysInMonth) {
+        if (month == nowCal.get(Calendar.MONTH) + 1 && year == nowCal.get(Calendar.YEAR)) {
+            nowCal.get(Calendar.DAY_OF_MONTH)
+        } else {
+            daysInMonth
+        }
+    }
+
+    val maxDayAmount = remember(byDay) { byDay.values.maxOrNull() ?: 0.0 }
+
     Scaffold(
         containerColor = Cream,
         topBar = {
             TopAppBar(
-                title = { Text("Analytics", fontWeight = FontWeight.Bold) },
+                title          = { Text("Analytics", fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, null) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Cream)
+                colors         = TopAppBarDefaults.topAppBarColors(containerColor = Cream)
             )
         }
     ) { padding ->
@@ -56,7 +89,7 @@ fun AnalyticsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Summary card
+            // ── Summary card ─────────────────────────────────────────────────
             Surface(shape = RoundedCornerShape(20.dp), color = CardBg, shadowElevation = 3.dp) {
                 Column(Modifier.padding(18.dp)) {
                     Text(
@@ -65,11 +98,11 @@ fun AnalyticsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                     )
                     Spacer(Modifier.height(14.dp))
                     Row(Modifier.fillMaxWidth(), Arrangement.SpaceEvenly) {
-                        SummaryCol("Budget", formatRupees(budget), Saffron)
+                        SummaryCol("Budget",  formatRupees(budget),    Saffron)
                         Box(Modifier.width(1.dp).height(40.dp).background(DividerColor))
-                        SummaryCol("Spent", formatRupees(spent), Color(0xFFD32F2F))
+                        SummaryCol("Spent",   formatRupees(spent),     Color(0xFFD32F2F))
                         Box(Modifier.width(1.dp).height(40.dp).background(DividerColor))
-                        SummaryCol("Left", formatRupees(remaining), if (remaining >= 0) DeepGreen else Color(0xFFD32F2F))
+                        SummaryCol("Left",    formatRupees(remaining), if (remaining >= 0) DeepGreen else Color(0xFFD32F2F))
                     }
                 }
             }
@@ -83,7 +116,49 @@ fun AnalyticsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                     }
                 }
             } else {
-                // Category breakdown
+
+                // ── Day-by-day spending trend ─────────────────────────────────
+                Text("Daily Spending Trend", style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+                Surface(shape = RoundedCornerShape(20.dp), color = CardBg, shadowElevation = 3.dp) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text(
+                            SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(
+                                Calendar.getInstance().apply { set(year, month - 1, 1) }.time
+                            ),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = TextSecondary
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        // Chart: show every day as a bar. Scroll horizontally for months > 15 days.
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(100.dp),
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            verticalAlignment     = Alignment.Bottom
+                        ) {
+                            for (d in 1..lastDay) {
+                                val amt   = byDay[d] ?: 0.0
+                                val color = if (budget > 0 && amt > budget / lastDay) Color(0xFFD32F2F) else Saffron
+                                DayBar(
+                                    dayLabel  = if (d == 1 || d % 5 == 0) "$d" else "",
+                                    amount    = amt,
+                                    maxAmount = maxDayAmount,
+                                    color     = color,
+                                    modifier  = Modifier.weight(1f).fillMaxHeight()
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Red bars exceed the daily budget pace",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextSecondary
+                        )
+                    }
+                }
+
+                // ── Category breakdown ────────────────────────────────────────
                 Text("Spending by Category", style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
                 Surface(shape = RoundedCornerShape(20.dp), color = CardBg, shadowElevation = 3.dp) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -91,25 +166,30 @@ fun AnalyticsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                         if (spent > 0) {
                             Row(Modifier.fillMaxWidth().height(22.dp).clip(RoundedCornerShape(50))) {
                                 byCategory.forEachIndexed { i, (_, amt) ->
-                                    Box(Modifier.weight((amt / spent).toFloat()).fillMaxHeight().background(BarColors[i % BarColors.size]))
+                                    Box(
+                                        Modifier
+                                            .weight((amt / spent).toFloat())
+                                            .fillMaxHeight()
+                                            .background(BarColors[i % BarColors.size])
+                                    )
                                 }
                             }
                         }
                         byCategory.forEachIndexed { i, (name, amt) ->
                             val cat = expenses.firstOrNull { it.categoryName == name }
                             BreakdownRow(
-                                emoji = cat?.categoryEmoji ?: "💰",
-                                name = name,
-                                amount = amt,
+                                emoji   = cat?.categoryEmoji ?: "💰",
+                                name    = name,
+                                amount  = amt,
                                 percent = if (spent > 0) (amt / spent * 100).toInt() else 0,
-                                total = spent,
-                                color = BarColors[i % BarColors.size]
+                                total   = spent,
+                                color   = BarColors[i % BarColors.size]
                             )
                         }
                     }
                 }
 
-                // Member breakdown (family only)
+                // ── Member breakdown (family only) ────────────────────────────
                 if (space == SpaceType.FAMILY && byMember.size > 1) {
                     Text("Spending by Member", style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
                     Surface(shape = RoundedCornerShape(20.dp), color = CardBg, shadowElevation = 3.dp) {
@@ -117,9 +197,12 @@ fun AnalyticsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                             byMember.forEachIndexed { i, (name, amt) ->
                                 val emoji = expenses.firstOrNull { it.userName == name }?.userEmoji ?: "👤"
                                 BreakdownRow(
-                                    emoji = emoji, name = name, amount = amt,
+                                    emoji   = emoji,
+                                    name    = name,
+                                    amount  = amt,
                                     percent = if (spent > 0) (amt / spent * 100).toInt() else 0,
-                                    total = spent, color = BarColors[i % BarColors.size]
+                                    total   = spent,
+                                    color   = BarColors[i % BarColors.size]
                                 )
                             }
                         }
@@ -155,7 +238,12 @@ fun BreakdownRow(emoji: String, name: String, amount: Double, percent: Int, tota
         }
         Spacer(Modifier.height(4.dp))
         Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(50)).background(color.copy(.15f))) {
-            Box(Modifier.fillMaxWidth(if (total > 0) (amount / total).toFloat() else 0f).fillMaxHeight().clip(RoundedCornerShape(50)).background(color))
+            Box(
+                Modifier.fillMaxWidth(if (total > 0) (amount / total).toFloat() else 0f)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(50))
+                    .background(color)
+            )
         }
     }
 }
