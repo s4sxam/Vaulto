@@ -1,3 +1,5 @@
+// FILE PATH: app/src/main/java/com/vaulto/ui/screens/AddExpenseScreen.kt
+
 package com.vaulto.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
@@ -23,6 +25,9 @@ import com.vaulto.data.model.SpaceType
 import com.vaulto.ui.components.*
 import com.vaulto.ui.theme.*
 import com.vaulto.viewmodel.MainViewModel
+
+// Maximum single-expense amount guard — prevents accidental 7-digit entries.
+private const val MAX_EXPENSE_AMOUNT = 999_999.0
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,27 +55,38 @@ fun AddExpenseScreen(viewModel: MainViewModel, onBack: () -> Unit) {
         }
     ) { padding ->
         Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
+            Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             // Space badge
-            Surface(shape = RoundedCornerShape(50), color = if (space == SpaceType.FAMILY) FamilyBlue.copy(.12f) else PersonalPurple.copy(.12f)) {
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = if (space == SpaceType.FAMILY) FamilyBlue.copy(.12f) else PersonalPurple.copy(.12f)
+            ) {
                 Text(
                     if (space == SpaceType.FAMILY) "👨‍👩‍👧‍👦  Adding to Family" else "🔒  Adding to Personal",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (space == SpaceType.FAMILY) FamilyBlue else PersonalPurple,
+                    style    = MaterialTheme.typography.labelLarge,
+                    color    = if (space == SpaceType.FAMILY) FamilyBlue else PersonalPurple,
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
                 )
             }
 
             // Remaining hint
             Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                Row(Modifier.fillMaxWidth().padding(14.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                Row(
+                    Modifier.fillMaxWidth().padding(14.dp),
+                    Arrangement.SpaceBetween,
+                    Alignment.CenterVertically
+                ) {
                     Text("💰 Remaining", style = MaterialTheme.typography.titleMedium, color = SaffronDark)
                     Text(
                         formatRupees(remaining),
-                        style = MaterialTheme.typography.titleLarge,
-                        color = if (remaining < 0) Color(0xFFD32F2F) else DeepGreen,
+                        style      = MaterialTheme.typography.titleLarge,
+                        color      = if (remaining < 0) Color(0xFFD32F2F) else DeepGreen,
                         fontWeight = FontWeight.ExtraBold
                     )
                 }
@@ -78,23 +94,47 @@ fun AddExpenseScreen(viewModel: MainViewModel, onBack: () -> Unit) {
 
             // Amount
             OutlinedTextField(
-                value = amount, onValueChange = { amount = it; error = "" },
-                label = { Text("Amount (₹)") }, placeholder = { Text("e.g. 350") },
-                leadingIcon = { Text("₹", modifier = Modifier.padding(start = 8.dp)) },
+                value           = amount,
+                onValueChange   = { v ->
+                    // Only allow numeric input with a single decimal point
+                    if (v.isEmpty() || v.matches(Regex("^\\d{0,7}(\\.\\d{0,2})?\$"))) {
+                        amount = v
+                        error  = ""
+                    }
+                },
+                label           = { Text("Amount (₹)") },
+                placeholder     = { Text("e.g. 350") },
+                leadingIcon     = { Text("₹", modifier = Modifier.padding(start = 8.dp)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Saffron, focusedLabelColor = Saffron),
-                singleLine = true, isError = error.isNotEmpty()
+                modifier        = Modifier.fillMaxWidth(),
+                shape           = RoundedCornerShape(16.dp),
+                colors          = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Saffron,
+                    focusedLabelColor  = Saffron
+                ),
+                singleLine = true,
+                isError    = error.isNotEmpty()
             )
 
             // Note
             OutlinedTextField(
-                value = note, onValueChange = { note = it },
-                label = { Text("Note (optional)") }, placeholder = { Text("e.g. Reliance Fresh groceries") },
-                leadingIcon = { Icon(Icons.Rounded.Edit, null) },
-                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Saffron, focusedLabelColor = Saffron),
-                singleLine = true
+                value           = note,
+                onValueChange   = { if (it.length <= 100) note = it },
+                label           = { Text("Note (optional)") },
+                placeholder     = { Text("e.g. Reliance Fresh groceries") },
+                leadingIcon     = { Icon(Icons.Rounded.Edit, null) },
+                modifier        = Modifier.fillMaxWidth(),
+                shape           = RoundedCornerShape(16.dp),
+                colors          = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Saffron,
+                    focusedLabelColor  = Saffron
+                ),
+                singleLine      = true,
+                supportingText  = {
+                    if (note.length > 80) {
+                        Text("${note.length}/100", color = if (note.length == 100) Color(0xFFD32F2F) else TextSecondary)
+                    }
+                }
             )
 
             // Categories
@@ -114,10 +154,20 @@ fun AddExpenseScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("New Category", style = MaterialTheme.typography.titleMedium)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(newEmoji, { newEmoji = it }, label = { Text("Emoji") },
-                                modifier = Modifier.width(80.dp), shape = RoundedCornerShape(12.dp), singleLine = true)
-                            OutlinedTextField(newName, { newName = it }, label = { Text("Name") },
-                                modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), singleLine = true)
+                            OutlinedTextField(
+                                newEmoji, { if (it.length <= 2) newEmoji = it },
+                                label    = { Text("Emoji") },
+                                modifier = Modifier.width(80.dp),
+                                shape    = RoundedCornerShape(12.dp),
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                newName, { if (it.length <= 20) newName = it },
+                                label    = { Text("Name") },
+                                modifier = Modifier.weight(1f),
+                                shape    = RoundedCornerShape(12.dp),
+                                singleLine = true
+                            )
                         }
                         Button(
                             onClick = {
@@ -126,14 +176,16 @@ fun AddExpenseScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                                     newName = ""; newEmoji = ""; showNew = false
                                 }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = Saffron),
+                            colors   = ButtonDefaults.buttonColors(containerColor = Saffron),
                             modifier = Modifier.align(Alignment.End)
                         ) { Text("Add") }
                     }
                 }
             }
 
-            if (error.isNotEmpty()) Text(error, color = MaterialTheme.colorScheme.error)
+            if (error.isNotEmpty()) {
+                Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+            }
 
             Spacer(Modifier.height(4.dp))
 
@@ -141,14 +193,15 @@ fun AddExpenseScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                 onClick = {
                     val amt = amount.toDoubleOrNull()
                     when {
-                        amt == null || amt <= 0 -> error = "Enter a valid amount"
-                        selCat == null -> error = "Select a category"
+                        amt == null || amt <= 0       -> error = "Enter a valid amount greater than ₹0"
+                        amt > MAX_EXPENSE_AMOUNT       -> error = "Amount cannot exceed ${formatRupees(MAX_EXPENSE_AMOUNT)}"
+                        selCat == null                -> error = "Please select a category"
                         else -> { viewModel.addExpense(selCat!!, amt, note.trim()); onBack() }
                     }
                 },
                 modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Saffron)
+                shape    = RoundedCornerShape(16.dp),
+                colors   = ButtonDefaults.buttonColors(containerColor = Saffron)
             ) {
                 Icon(Icons.Rounded.Check, null)
                 Spacer(Modifier.width(8.dp))
