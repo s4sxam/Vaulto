@@ -1,5 +1,11 @@
 // FILE PATH: app/src/main/java/com/vaulto/ui/theme/Theme.kt
-// (Delete the old file at: app/src/main/java/com/vaulto/theme/Theme.kt)
+//
+// ⚠️  ACTION REQUIRED: Delete the OLD file at
+//         app/src/main/java/com/vaulto/theme/Theme.kt
+//     (package com.vaulto.theme, wrong directory).
+//     Keep ONLY this file at com/vaulto/ui/theme/Theme.kt.
+//     Android's build system maps directories to packages; having the old file
+//     present will cause a "duplicate class" compilation error.
 
 package com.vaulto.ui.theme
 
