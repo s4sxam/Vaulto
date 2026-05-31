@@ -1,3 +1,5 @@
+// FILE PATH: app/src/main/java/com/vaulto/ui/screens/HomeScreen.kt
+
 package com.vaulto.ui.screens
 
 import androidx.compose.foundation.layout.*
@@ -27,19 +29,17 @@ fun HomeScreen(
     onAnalytics: () -> Unit,
     onSettings: () -> Unit
 ) {
-    val profile   by viewModel.profile.collectAsState()
-    val family    by viewModel.family.collectAsState()
-    val space     by viewModel.activeSpace.collectAsState()
-    val expenses  by viewModel.expenses.collectAsState()
-    val spent     by viewModel.totalSpent.collectAsState()
-    val remaining by viewModel.remaining.collectAsState()
-    val budget    by viewModel.currentBudget.collectAsState()
-    val month     by viewModel.month.collectAsState()
-    val year      by viewModel.year.collectAsState()
+    val profile     by viewModel.profile.collectAsState()
+    val family      by viewModel.family.collectAsState()
+    val space       by viewModel.activeSpace.collectAsState()
+    val expenses    by viewModel.expenses.collectAsState()
+    val spent       by viewModel.totalSpent.collectAsState()
+    val remaining   by viewModel.remaining.collectAsState()
+    val budget      by viewModel.currentBudget.collectAsState()
+    val month       by viewModel.month.collectAsState()
+    val year        by viewModel.year.collectAsState()
+    val dailyAvg    by viewModel.dailyAverage.collectAsState()
 
-    // ✅ BUG 14 FIX: Compute whether we're already at the current month so we
-    //    can disable the "forward" chevron. Allowing future months is confusing
-    //    (they will always show zero expenses) and a poor UX for a finance app.
     val nowCal = remember { Calendar.getInstance() }
     val isCurrentMonth = remember(month, year) {
         month == nowCal.get(Calendar.MONTH) + 1 && year == nowCal.get(Calendar.YEAR)
@@ -80,7 +80,6 @@ fun HomeScreen(
                         Text(monthLabel, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
                     }
                     Row {
-                        // Previous month — always enabled
                         IconButton(onClick = {
                             val c = Calendar.getInstance().apply {
                                 set(Calendar.MONTH, month - 1)
@@ -91,10 +90,10 @@ fun HomeScreen(
                         }) {
                             Icon(Icons.Rounded.ChevronLeft, null, tint = TextSecondary)
                         }
-                        // ✅ BUG 14 FIX: Disable the next-month button when already
-                        //    on the current month. There are no future expenses to show.
+                        // Disable next-month when already on the current month —
+                        // future months will always show zero expenses.
                         IconButton(
-                            onClick  = {
+                            onClick = {
                                 val c = Calendar.getInstance().apply {
                                     set(Calendar.MONTH, month - 1)
                                     set(Calendar.YEAR, year)
@@ -152,15 +151,9 @@ fun HomeScreen(
                     Arrangement.spacedBy(12.dp)
                 ) {
                     MiniStat("📊", "Transactions", expenses.size.toString(), Modifier.weight(1f))
-                    MiniStat(
-                        "📅", "Daily Avg",
-                        formatRupees(
-                            if (expenses.isNotEmpty())
-                                spent / maxOf(Calendar.getInstance().get(Calendar.DAY_OF_MONTH), 1)
-                            else 0.0
-                        ),
-                        Modifier.weight(1f)
-                    )
+                    // ✅ FIX: Daily average now comes from ViewModel where the
+                    //    divisor correctly accounts for past-month vs current-month.
+                    MiniStat("📅", "Daily Avg", formatRupees(dailyAvg), Modifier.weight(1f))
                 }
             }
 
@@ -185,11 +178,6 @@ fun HomeScreen(
                         modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 6.dp)
                     )
                 }
-                // ✅ BUG 7 FIX: The original code had
-                //      Spacer(Modifier.height(6.dp).padding(horizontal = 16.dp))
-                //    which is wrong — padding on a Spacer is a no-op. The padding
-                //    is now correctly applied to the ExpenseRow's own container via
-                //    the horizontalPadding modifier passed through the component.
                 items(expenses, key = { it.id }) { exp ->
                     ExpenseRow(
                         emoji      = exp.categoryEmoji,
