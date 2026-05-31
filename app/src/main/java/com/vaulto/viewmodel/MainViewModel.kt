@@ -21,8 +21,6 @@ private const val TAG = "MainViewModel"
 @OptIn(ExperimentalCoroutinesApi::class)
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
-    // ✅ FIX: Repositories are private — UI must go through ViewModel methods only.
-    //    Exposing repos directly breaks MVVM and lets UI bypass validation logic.
     private val authRepo   = AuthRepository(application)
     private val budgetRepo = BudgetRepository()
 
@@ -34,7 +32,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val month: StateFlow<Int> = _month
     val year:  StateFlow<Int> = _year
 
-    private val _space = MutableStateFlow(SpaceType.FAMILY)
+    // ✅ FIX: Default to PERSONAL space. Defaulting to FAMILY caused confusing
+    //    empty states for new users who haven't set up a family yet, and for
+    //    returning users who land on a FAMILY view with no expenses loaded while
+    //    the profile/family fetch is still in flight.
+    private val _space = MutableStateFlow(SpaceType.PERSONAL)
     val activeSpace: StateFlow<SpaceType> = _space
     fun setSpace(s: SpaceType) { _space.value = s }
 
@@ -44,9 +46,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _family = MutableStateFlow<FamilyGroup?>(null)
     val family: StateFlow<FamilyGroup?> = _family
 
-    // ✅ FIX: Separate loading state so VaultoApp can show a true splash screen
-    //    until Firebase resolves auth — avoids the login-screen flash for users
-    //    that are already signed in.
     private val _authLoading = MutableStateFlow(true)
     val authLoading: StateFlow<Boolean> = _authLoading
 
@@ -83,9 +82,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }.flatMapLatest { it }
      .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0.0)
 
-    // Independent personal budget — unaffected by the active space toggle.
-    // SettingsScreen always reads real personal budget regardless of which
-    // space (Family / Personal) is currently selected on HomeScreen.
+    // Independent personal budget — always reads real personal budget regardless
+    // of which space (Family / Personal) is active on HomeScreen.
     val personalBudget: StateFlow<Double> = combine(currentUser, _month, _year) { user, m, y ->
         if (user != null) budgetRepo.getPersonalBudgetFlow(user.uid, m, y) else flowOf(0.0)
     }.flatMapLatest { it }
@@ -94,19 +92,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val remaining: StateFlow<Double> = combine(currentBudget, totalSpent) { b, s -> b - s }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0.0)
 
-    // Tracks the active profile/family listener so we never have two running in parallel.
+    /**
+     * Daily average spend for the current month.
+     * Divides total spent by the number of days that have ACTUALLY passed in the
+     * selected month (capped at the current day for the current month, or the
+     * full month length for past months). This gives a more accurate "pace"
+     * figure than simply dividing by today's date.
+     */
+    val dailyAverage: StateFlow<Double> = combine(totalSpent, _month, _year) { spent, m, y ->
+        if (spent == 0.0) return@combine 0.0
+        val now = Calendar.getInstance()
+        val divisor = if (m == now.get(Calendar.MONTH) + 1 && y == now.get(Calendar.YEAR)) {
+            maxOf(now.get(Calendar.DAY_OF_MONTH), 1)
+        } else {
+            // Past month — use full month length
+            Calendar.getInstance().apply { set(y, m - 1, 1) }
+                .getActualMaximum(Calendar.DAY_OF_MONTH)
+        }
+        spent / divisor
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0.0)
+
     private var profileJob: Job? = null
 
     init {
         viewModelScope.launch {
-            // collectLatest cancels the previous block when a new user emission arrives,
-            // preventing multiple concurrent Firestore listeners.
             currentUser.collectLatest { user ->
-                _authLoading.value = false   // Firebase has resolved — safe to navigate.
+                _authLoading.value = false
                 if (user != null) {
                     loadProfile(user.uid)
                 } else {
-                    // Signed out — wipe local state immediately.
                     _profile.value = null
                     _family.value  = null
                 }
@@ -114,9 +128,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // ✅ FIX: loadProfile catches errors from the family flow so a Firestore
-    //    outage doesn't silently kill profileJob and leave the UI stuck on
-    //    FamilySetupScreen even though the user already has a family.
     private fun loadProfile(uid: String) {
         profileJob?.cancel()
         profileJob = viewModelScope.launch {
@@ -142,17 +153,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun signOut() {
         profileJob?.cancel()
         authRepo.signOut()
-        // _profile and _family are cleared by the collectLatest block when
-        // currentUser emits null after signOut().
     }
 
-    // ✅ FIX: createFamily cancels profileJob before collecting a new family
-    //    flow to avoid two concurrent Firestore listeners on the same document.
     fun createFamily(name: String, budget: Double) = viewModelScope.launch {
         val uid = currentUser.value?.uid ?: return@launch
-        val fid = budgetRepo.createFamily(uid, name, budget)
-        // Reload the full profile — this will pick up the new familyId and
-        // start a single, authoritative family flow listener.
+        budgetRepo.createFamily(uid, name, budget)
         loadProfile(uid)
     }
 
