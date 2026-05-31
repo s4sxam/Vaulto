@@ -38,18 +38,31 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
     val family         by viewModel.family.collectAsState()
     val personalBudget by viewModel.personalBudget.collectAsState()
 
+    // ✅ FIX: Pre-populate the personal budget input with the current value so the
+    //    user can edit it in-place rather than re-typing from scratch. LaunchedEffect
+    //    runs once when personalBudget arrives from Firestore, and again if it
+    //    changes externally (e.g., another device updated it).
     var personalBudgetInput by remember { mutableStateOf("") }
-    var familyBudgetInput   by remember { mutableStateOf("") }
-    val clipboard            = LocalClipboardManager.current
-    var copied              by remember { mutableStateOf(false) }
-
-    // ✅ FIX: Auto-reset the "copied" checkmark after 2 seconds so the icon
-    //    doesn't stay as a permanent checkmark for the rest of the session.
-    LaunchedEffect(copied) {
-        if (copied) {
-            delay(2_000)
-            copied = false
+    LaunchedEffect(personalBudget) {
+        if (personalBudget > 0 && personalBudgetInput.isEmpty()) {
+            personalBudgetInput = personalBudget.toInt().toString()
         }
+    }
+
+    // ✅ FIX: Pre-populate the family budget input with the current family budget.
+    var familyBudgetInput by remember { mutableStateOf("") }
+    LaunchedEffect(family?.monthlyBudget) {
+        val current = family?.monthlyBudget ?: 0.0
+        if (current > 0 && familyBudgetInput.isEmpty()) {
+            familyBudgetInput = current.toInt().toString()
+        }
+    }
+
+    val clipboard = LocalClipboardManager.current
+    var copied    by remember { mutableStateOf(false) }
+
+    LaunchedEffect(copied) {
+        if (copied) { delay(2_000); copied = false }
     }
 
     Scaffold(
@@ -125,8 +138,8 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value           = personalBudgetInput,
-                        onValueChange   = { personalBudgetInput = it },
-                        label           = { Text("New Monthly Budget (₹)") },
+                        onValueChange   = { if (it.length <= 7 && it.all { c -> c.isDigit() }) personalBudgetInput = it },
+                        label           = { Text("Monthly Budget (₹)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier        = Modifier.weight(1f),
                         shape           = RoundedCornerShape(14.dp),
@@ -138,11 +151,11 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                     )
                     Button(
                         onClick = {
-                            personalBudgetInput.toDoubleOrNull()?.let {
+                            personalBudgetInput.toDoubleOrNull()?.takeIf { it > 0 }?.let {
                                 viewModel.setPersonalBudget(it)
-                                personalBudgetInput = ""
                             }
                         },
+                        enabled  = personalBudgetInput.toDoubleOrNull()?.let { it > 0 } == true,
                         colors   = ButtonDefaults.buttonColors(containerColor = PersonalPurple),
                         shape    = RoundedCornerShape(14.dp),
                         modifier = Modifier.align(Alignment.CenterVertically)
@@ -192,9 +205,8 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value           = familyBudgetInput,
-                            onValueChange   = { familyBudgetInput = it },
+                            onValueChange   = { if (it.length <= 7 && it.all { c -> c.isDigit() }) familyBudgetInput = it },
                             label           = { Text("Family Budget (₹)") },
-                            placeholder     = { Text("Current: ${formatRupees(fam.monthlyBudget)}") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier        = Modifier.weight(1f),
                             shape           = RoundedCornerShape(14.dp),
@@ -206,11 +218,11 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                         )
                         Button(
                             onClick = {
-                                familyBudgetInput.toDoubleOrNull()?.let {
+                                familyBudgetInput.toDoubleOrNull()?.takeIf { it > 0 }?.let {
                                     viewModel.updateFamilyBudget(it)
-                                    familyBudgetInput = ""
                                 }
                             },
+                            enabled  = familyBudgetInput.toDoubleOrNull()?.let { it > 0 } == true,
                             colors   = ButtonDefaults.buttonColors(containerColor = FamilyBlue),
                             shape    = RoundedCornerShape(14.dp),
                             modifier = Modifier.align(Alignment.CenterVertically)
