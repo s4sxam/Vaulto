@@ -1,3 +1,5 @@
+// FILE PATH: app/src/main/java/com/vaulto/auth/AuthRepository.kt
+
 package com.vaulto.auth
 
 import android.app.Activity
@@ -11,6 +13,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import com.vaulto.data.model.UserProfile
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,7 +21,6 @@ import kotlinx.coroutines.tasks.await
 
 class AuthRepository(context: Context) {
 
-    // Always hold applicationContext for non-UI operations.
     private val appContext: Context = context.applicationContext
 
     private val auth = FirebaseAuth.getInstance()
@@ -28,8 +30,6 @@ class AuthRepository(context: Context) {
     val currentUser: StateFlow<FirebaseUser?> = _currentUser
 
     init {
-        // Keep _currentUser in sync with Firebase's own auth state so that
-        // sign-in from another device / token expiry is reflected immediately.
         auth.addAuthStateListener { firebaseAuth ->
             _currentUser.value = firebaseAuth.currentUser
         }
@@ -37,17 +37,12 @@ class AuthRepository(context: Context) {
 
     // ─── SIGN IN ────────────────────────────────────────────────────────────
 
-    /**
-     * [activity] MUST be an Activity instance — CredentialManager's bottom-sheet
-     * requires an Activity context to attach its UI. Passing applicationContext
-     * causes a GetCredentialException and the "Sign-in failed" error.
-     */
     suspend fun signInWithGoogle(activity: Activity, webClientId: String): Result<FirebaseUser> {
         return try {
             val credentialManager = CredentialManager.create(appContext)
 
             val googleIdOption = GetGoogleIdOption.Builder()
-                .setFilterByAuthorizedAccounts(false)   // show all Google accounts
+                .setFilterByAuthorizedAccounts(false)
                 .setServerClientId(webClientId)
                 .build()
 
@@ -55,10 +50,6 @@ class AuthRepository(context: Context) {
                 .addCredentialOption(googleIdOption)
                 .build()
 
-            // ✅ CRITICAL FIX: pass the Activity, not applicationContext.
-            //    CredentialManager needs an Activity to show the account picker
-            //    bottom-sheet. Using applicationContext here was the root cause of
-            //    "Sign-in failed. Please try again." shown in the screenshot.
             val result = credentialManager.getCredential(activity, request)
 
             val googleIdToken = GoogleIdTokenCredential
@@ -70,21 +61,40 @@ class AuthRepository(context: Context) {
             val user               = authResult.user
                 ?: return Result.failure(IllegalStateException("Firebase user was null after sign-in"))
 
-            // Upsert the user's profile in Firestore on every sign-in so that
-            // display name / photo URL changes are always kept fresh.
-            val profile = UserProfile(
-                uid      = user.uid,
-                name     = user.displayName ?: "Family Member",
-                email    = user.email       ?: "",
-                photoUrl = user.photoUrl?.toString() ?: "",
-                emoji    = pickEmoji(user.displayName)
+            // ✅ CRITICAL FIX: Use SetOptions.merge() so that pre-existing fields
+            //    (most importantly `familyId`) are NEVER overwritten on subsequent
+            //    sign-ins. Without merge(), every login reset familyId to "" in
+            //    Firestore, silently breaking the family-sharing feature entirely.
+            //
+            //    Only mutable display fields (name, email, photoUrl) are refreshed;
+            //    familyId, emoji, and createdAt are left untouched if they exist.
+            val profileUpdates = mapOf(
+                "uid"      to user.uid,
+                "name"     to (user.displayName ?: "Family Member"),
+                "email"    to (user.email ?: ""),
+                "photoUrl" to (user.photoUrl?.toString() ?: "")
+                // ↑ familyId, emoji, createdAt intentionally omitted — merge() keeps existing values
             )
-            db.collection("users").document(user.uid).set(profile).await()
+            db.collection("users").document(user.uid)
+                .set(profileUpdates, SetOptions.merge())
+                .await()
+
+            // If this is the very first sign-in (new user), initialise the fields
+            // that merge() won't touch if the document doesn't exist yet.
+            val snap = db.collection("users").document(user.uid).get().await()
+            if (snap.getString("emoji").isNullOrBlank()) {
+                db.collection("users").document(user.uid)
+                    .update(
+                        mapOf(
+                            "emoji"     to pickEmoji(user.displayName),
+                            "createdAt" to System.currentTimeMillis()
+                        )
+                    ).await()
+            }
 
             Result.success(user)
 
         } catch (e: GetCredentialException) {
-            // User cancelled, no accounts available, or Activity context missing.
             Result.failure(e)
         } catch (e: Exception) {
             Result.failure(e)
@@ -106,14 +116,16 @@ class AuthRepository(context: Context) {
     }
 
     suspend fun updateUserProfile(profile: UserProfile) {
-        db.collection("users").document(profile.uid).set(profile).await()
+        // Use merge so partial updates never clobber fields we didn't touch.
+        db.collection("users").document(profile.uid)
+            .set(profile, SetOptions.merge())
+            .await()
     }
 
     // ─── SIGN OUT ───────────────────────────────────────────────────────────
 
     fun signOut() {
         auth.signOut()
-        // _currentUser will be updated automatically by the AuthStateListener above.
     }
 
     // ─── HELPERS ────────────────────────────────────────────────────────────
