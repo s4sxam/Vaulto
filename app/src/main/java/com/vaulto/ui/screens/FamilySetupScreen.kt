@@ -23,15 +23,13 @@ fun FamilySetupScreen(viewModel: MainViewModel) {
     var tab        by remember { mutableStateOf(0) }   // 0 = Create, 1 = Join
     var familyName by remember { mutableStateOf("") }
     var budget     by remember { mutableStateOf("") }
+    var budgetError by remember { mutableStateOf("") }
     var joinCode   by remember { mutableStateOf("") }
     var joinError  by remember { mutableStateOf("") }
     var loading    by remember { mutableStateOf(false) }
 
     val profile by viewModel.profile.collectAsState()
 
-    // ✅ FIX: Scaffold ensures the entire screen gets the Cream background from
-    //    the theme (including system bar areas on edge-to-edge builds). Without
-    //    this, the OS default white/black background shows through on some devices.
     Scaffold(containerColor = Cream) { padding ->
         Box(
             modifier         = Modifier.fillMaxSize().padding(padding),
@@ -73,7 +71,7 @@ fun FamilySetupScreen(viewModel: MainViewModel) {
                     // ── Create ───────────────────────────────────────────────
                     OutlinedTextField(
                         value         = familyName,
-                        onValueChange = { familyName = it },
+                        onValueChange = { if (it.length <= 30) familyName = it },
                         label         = { Text("Family Name") },
                         placeholder   = { Text("e.g. Sharma Family") },
                         modifier      = Modifier.fillMaxWidth(),
@@ -86,7 +84,13 @@ fun FamilySetupScreen(viewModel: MainViewModel) {
                     )
                     OutlinedTextField(
                         value           = budget,
-                        onValueChange   = { budget = it },
+                        onValueChange   = {
+                            // Only digits, max 7 chars
+                            if (it.isEmpty() || (it.all { c -> c.isDigit() } && it.length <= 7)) {
+                                budget      = it
+                                budgetError = ""
+                            }
+                        },
                         label           = { Text("Monthly Family Budget (₹)") },
                         placeholder     = { Text("e.g. 30000") },
                         leadingIcon     = { Text("₹", modifier = Modifier.padding(start = 8.dp)) },
@@ -97,12 +101,28 @@ fun FamilySetupScreen(viewModel: MainViewModel) {
                             focusedBorderColor = Saffron,
                             focusedLabelColor  = Saffron
                         ),
-                        singleLine = true
+                        isError    = budgetError.isNotEmpty(),
+                        singleLine = true,
+                        // ✅ FIX: Show a hint so users know budget can be changed later.
+                        supportingText = {
+                            if (budgetError.isNotEmpty()) {
+                                Text(budgetError, color = MaterialTheme.colorScheme.error)
+                            } else {
+                                Text("You can update this anytime in Settings", color = TextSecondary)
+                            }
+                        }
                     )
                     Button(
                         onClick = {
-                            if (familyName.isNotBlank()) {
-                                viewModel.createFamily(familyName.trim(), budget.toDoubleOrNull() ?: 0.0)
+                            val budgetVal = budget.toDoubleOrNull()
+                            when {
+                                familyName.isBlank() -> { /* button is disabled */ }
+                                // ✅ FIX: Validate budget > 0 so users don't accidentally
+                                //    create a family with ₹0 budget and see a 100% bar immediately.
+                                budgetVal == null || budgetVal <= 0 ->
+                                    budgetError = "Enter a budget greater than ₹0"
+                                else ->
+                                    viewModel.createFamily(familyName.trim(), budgetVal)
                             }
                         },
                         enabled  = familyName.isNotBlank(),
@@ -130,11 +150,11 @@ fun FamilySetupScreen(viewModel: MainViewModel) {
                             focusedLabelColor  = FamilyBlue
                         ),
                         isError    = joinError.isNotEmpty(),
-                        singleLine = true
+                        singleLine = true,
+                        supportingText = {
+                            if (joinError.isNotEmpty()) Text(joinError, color = MaterialTheme.colorScheme.error)
+                        }
                     )
-                    if (joinError.isNotEmpty()) {
-                        Text(joinError, color = MaterialTheme.colorScheme.error)
-                    }
                     Button(
                         onClick = {
                             loading = true
