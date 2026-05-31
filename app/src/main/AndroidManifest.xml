@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- FILE PATH: app/src/main/AndroidManifest.xml -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
@@ -8,14 +9,13 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Vaulto">
+        android:theme="@style/Theme.Vaulto"
+        android:networkSecurityConfig="@xml/network_security_config">
 
         <!--
-            android:roundIcon removed â€” no round icon assets exist in res/mipmap-*.
-            The system will fall back gracefully to the standard ic_launcher.
-            Add round icon assets and restore this attribute when ready.
+            windowSoftInputMode="adjustResize" ensures the keyboard doesn't cover
+            amount/note fields in AddExpenseScreen and budget fields in Settings.
         -->
-
         <activity
             android:name=".MainActivity"
             android:exported="true"
