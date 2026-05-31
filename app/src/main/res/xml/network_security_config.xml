@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FILE PATH: app/src/main/res/xml/network_security_config.xml  (NEW FILE) -->
+<!--
+    For a finance app, cleartext (HTTP) traffic should be blocked entirely.
+    Firebase, Firestore, and Google Sign-In all use HTTPS; this config enforces it.
+    minSdk 26 already restricts cleartext by default, but being explicit here
+    ensures the behaviour is documented and survives future minSdk bumps.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
