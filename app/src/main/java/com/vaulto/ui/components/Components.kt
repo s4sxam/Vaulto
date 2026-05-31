@@ -2,8 +2,13 @@
 
 package com.vaulto.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.*
@@ -128,7 +133,7 @@ fun BudgetCard(
                 }
                 Surface(shape = RoundedCornerShape(12.dp), color = Color.White.copy(.2f)) {
                     Text(
-                        formatRupees(budget),
+                        if (budget > 0) formatRupees(budget) else "No budget set",
                         style    = MaterialTheme.typography.titleMedium,
                         color    = Color.White,
                         modifier = Modifier.padding(12.dp, 6.dp)
@@ -142,28 +147,41 @@ fun BudgetCard(
                 color      = Color.White,
                 fontWeight = FontWeight.ExtraBold
             )
-            Text("remaining", style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(.8f))
+            Text(
+                if (budget > 0) "remaining" else "spent (no budget set)",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(.8f)
+            )
             Spacer(Modifier.height(14.dp))
-            Box(
-                Modifier.fillMaxWidth().height(8.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(Color.White.copy(.25f))
-            ) {
+            // Progress bar — hidden when no budget is set (avoids a full bar showing)
+            if (budget > 0) {
                 Box(
-                    Modifier.fillMaxWidth(progress).fillMaxHeight()
+                    Modifier.fillMaxWidth().height(8.dp)
                         .clip(RoundedCornerShape(50))
-                        .background(Color.White)
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
+                        .background(Color.White.copy(.25f))
+                ) {
+                    Box(
+                        Modifier.fillMaxWidth(progress).fillMaxHeight()
+                            .clip(RoundedCornerShape(50))
+                            .background(Color.White)
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
+                    Text(
+                        "Spent: ${formatRupees(spent)}",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color.White.copy(.9f)
+                    )
+                    Text(
+                        "${(progress * 100).toInt()}% used",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color.White.copy(.9f)
+                    )
+                }
+            } else {
                 Text(
                     "Spent: ${formatRupees(spent)}",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Color.White.copy(.9f)
-                )
-                Text(
-                    "${(progress * 100).toInt()}% used",
                     style = MaterialTheme.typography.labelLarge,
                     color = Color.White.copy(.9f)
                 )
@@ -200,12 +218,7 @@ fun ExpenseRow(
             Modifier
                 .fillMaxWidth()
                 .combinedClickable(
-                    onClick = {
-                        // ✅ FIX: Tapping anywhere on the row dismisses the delete button.
-                        //    Previously there was no way to dismiss it once shown — the
-                        //    user had to long-press again, which feels broken.
-                        if (showDel) showDel = false
-                    },
+                    onClick     = { if (showDel) showDel = false },
                     onLongClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         showDel = !showDel
@@ -214,6 +227,7 @@ fun ExpenseRow(
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Category icon
             Box(
                 Modifier
                     .size(48.dp)
@@ -224,6 +238,7 @@ fun ExpenseRow(
 
             Spacer(Modifier.width(12.dp))
 
+            // Labels — always take available weight
             Column(Modifier.weight(1f)) {
                 Text(category, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
                 if (note.isNotBlank()) {
@@ -247,7 +262,15 @@ fun ExpenseRow(
                 }
             }
 
-            if (showDel) {
+            // ✅ FIX: The delete button and the amount are mutually exclusive.
+            //    Previously both showed at the same time when showDel=true, making
+            //    the row layout cramped and the amount unreadable. Now the amount
+            //    slides out and the delete button slides in — clean, unambiguous.
+            AnimatedVisibility(
+                visible = showDel,
+                enter   = fadeIn() + slideInHorizontally { it },
+                exit    = fadeOut() + slideOutHorizontally { it }
+            ) {
                 IconButton(onClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     onDelete()
@@ -260,12 +283,18 @@ fun ExpenseRow(
                 }
             }
 
-            Text(
-                "- ${formatRupees(amount)}",
-                style      = MaterialTheme.typography.titleMedium,
-                color      = Color(0xFFD32F2F),
-                fontWeight = FontWeight.Bold
-            )
+            AnimatedVisibility(
+                visible = !showDel,
+                enter   = fadeIn() + slideInHorizontally { -it },
+                exit    = fadeOut() + slideOutHorizontally { -it }
+            ) {
+                Text(
+                    "- ${formatRupees(amount)}",
+                    style      = MaterialTheme.typography.titleMedium,
+                    color      = Color(0xFFD32F2F),
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }
@@ -294,5 +323,59 @@ fun CategoryChip(emoji: String, name: String, selected: Boolean, onClick: () -> 
             Text(emoji, fontSize = 16.sp)
             Text(name, style = MaterialTheme.typography.labelLarge, color = tx)
         }
+    }
+}
+
+// ── Mini Spending Bar (for Analytics day-by-day view) ────────────────────────
+
+/**
+ * A horizontal bar representing a single day's spending relative to a daily budget.
+ * Used in the AnalyticsScreen trend section.
+ */
+@Composable
+fun DayBar(
+    dayLabel: String,
+    amount: Double,
+    maxAmount: Double,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    val fraction by animateFloatAsState(
+        targetValue   = if (maxAmount > 0) (amount / maxAmount).toFloat().coerceIn(0f, 1f) else 0f,
+        animationSpec = tween(600, easing = EaseOutCubic),
+        label         = "dayBar"
+    )
+    Column(
+        modifier            = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Bottom
+    ) {
+        if (amount > 0) {
+            Text(
+                formatRupees(amount).replace("₹", ""),
+                style  = MaterialTheme.typography.labelSmall,
+                color  = TextSecondary,
+                fontSize = 9.sp
+            )
+        }
+        Spacer(Modifier.height(2.dp))
+        Box(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
+                .background(color.copy(.12f)),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(fraction)
+                    .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
+                    .background(color)
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(dayLabel, style = MaterialTheme.typography.labelSmall, color = TextSecondary, fontSize = 9.sp)
     }
 }
