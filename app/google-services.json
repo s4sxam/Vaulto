@@ -12,7 +12,20 @@
           "package_name": "com.vaulto"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "329764161199-rgbgrivqppo1qigj4e21jctoo14mkp4m.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.vaulto",
+            "certificate_hash": "133591d7844f2581be6ed1591a82971768910f42"
+          }
+        },
+        {
+          "client_id": "329764161199-1qsl67npq34p0sj81ha7an7b2svhm8b5.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAKMhcBbI5KvhWsDHFmbcCCotbxxFhdmDo"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "329764161199-1qsl67npq34p0sj81ha7an7b2svhm8b5.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
