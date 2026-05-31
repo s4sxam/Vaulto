@@ -71,6 +71,9 @@ jobs:
           }
           GSJSON
 
+      - name: Print SHA Fingerprints
+        run: ./gradlew signingReport
+
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace
 
