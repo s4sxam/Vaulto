@@ -14,19 +14,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.*
 import com.vaulto.ui.theme.*
 import com.vaulto.viewmodel.MainViewModel
 
 @Composable
-fun FamilySetupScreen(viewModel: MainViewModel) {
-    var tab        by remember { mutableStateOf(0) }   // 0 = Create, 1 = Join
-    var familyName by remember { mutableStateOf("") }
-    var budget     by remember { mutableStateOf("") }
+fun FamilySetupScreen(
+    viewModel: MainViewModel,
+    onSkip: () -> Unit                    // ✅ NEW: lets the user go personal-only
+) {
+    var tab         by remember { mutableStateOf(0) }
+    var familyName  by remember { mutableStateOf("") }
+    var budget      by remember { mutableStateOf("") }
     var budgetError by remember { mutableStateOf("") }
-    var joinCode   by remember { mutableStateOf("") }
-    var joinError  by remember { mutableStateOf("") }
-    var loading    by remember { mutableStateOf(false) }
+    var joinCode    by remember { mutableStateOf("") }
+    var joinError   by remember { mutableStateOf("") }
+    var loading     by remember { mutableStateOf(false) }
 
     val profile by viewModel.profile.collectAsState()
 
@@ -53,8 +57,9 @@ fun FamilySetupScreen(viewModel: MainViewModel) {
                 Text(
                     "Hi ${profile?.name?.split(" ")?.first() ?: "there"}! " +
                     "Create a new family group or join an existing one.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = TextSecondary
+                    style     = MaterialTheme.typography.bodyLarge,
+                    color     = TextSecondary,
+                    textAlign = TextAlign.Center
                 )
 
                 TabRow(
@@ -85,7 +90,6 @@ fun FamilySetupScreen(viewModel: MainViewModel) {
                     OutlinedTextField(
                         value           = budget,
                         onValueChange   = {
-                            // Only digits, max 7 chars
                             if (it.isEmpty() || (it.all { c -> c.isDigit() } && it.length <= 7)) {
                                 budget      = it
                                 budgetError = ""
@@ -103,7 +107,6 @@ fun FamilySetupScreen(viewModel: MainViewModel) {
                         ),
                         isError    = budgetError.isNotEmpty(),
                         singleLine = true,
-                        // ✅ FIX: Show a hint so users know budget can be changed later.
                         supportingText = {
                             if (budgetError.isNotEmpty()) {
                                 Text(budgetError, color = MaterialTheme.colorScheme.error)
@@ -116,9 +119,7 @@ fun FamilySetupScreen(viewModel: MainViewModel) {
                         onClick = {
                             val budgetVal = budget.toDoubleOrNull()
                             when {
-                                familyName.isBlank() -> { /* button is disabled */ }
-                                // ✅ FIX: Validate budget > 0 so users don't accidentally
-                                //    create a family with ₹0 budget and see a 100% bar immediately.
+                                familyName.isBlank() -> { /* button disabled */ }
                                 budgetVal == null || budgetVal <= 0 ->
                                     budgetError = "Enter a budget greater than ₹0"
                                 else ->
@@ -135,8 +136,9 @@ fun FamilySetupScreen(viewModel: MainViewModel) {
                     // ── Join ─────────────────────────────────────────────────
                     Text(
                         "Ask a family member for their Family ID from the app settings.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary
+                        style     = MaterialTheme.typography.bodyMedium,
+                        color     = TextSecondary,
+                        textAlign = TextAlign.Center
                     )
                     OutlinedTextField(
                         value         = joinCode,
@@ -174,6 +176,23 @@ fun FamilySetupScreen(viewModel: MainViewModel) {
                             Text("Join Family", fontWeight = FontWeight.Bold)
                         }
                     }
+                }
+
+                // ── Skip / Personal-only ──────────────────────────────────────
+                // ✅ NEW: Users who don't have a family (or don't want one yet)
+                //    were previously stuck on this screen with no way out.
+                //    This button exits to Home in personal-only mode; they can
+                //    always set up a family later from Settings.
+                Spacer(Modifier.height(4.dp))
+                TextButton(
+                    onClick  = onSkip,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "Skip for now — use Personal only",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary
+                    )
                 }
             }
         }
