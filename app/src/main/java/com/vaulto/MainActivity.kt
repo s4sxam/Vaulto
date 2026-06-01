@@ -29,6 +29,9 @@ class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
 
     companion object {
+        // Web client ID (type 3) from google-services.json — used by Credential Manager
+        // to identify the server-side OAuth 2.0 client that should receive the ID token.
+        // This is NOT the Android client ID (type 1).
         const val GOOGLE_WEB_CLIENT_ID =
             "329764161199-1qsl67npq34p0sj81ha7an7b2svhm8b5.apps.googleusercontent.com"
     }
@@ -46,30 +49,34 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun VaultoApp(viewModel: MainViewModel) {
-    val navController = rememberNavController()
-    val currentUser   by viewModel.currentUser.collectAsState()
-    val family        by viewModel.family.collectAsState()
+    val navController  = rememberNavController()
+    val currentUser    by viewModel.currentUser.collectAsState()
+    val family         by viewModel.family.collectAsState()
+    val familySkipped  by viewModel.familySkipped.collectAsState()
 
-    // ✅ FIX: authLoading comes from the ViewModel — it turns false only after
-    //    Firebase's AuthStateListener fires its first callback. This is more
-    //    reliable than a local boolean that flips after one LaunchedEffect frame,
-    //    because Firebase can take more than one recomposition to restore the
-    //    cached auth token from disk.
+    // ✅ FIX — Splash gate:
+    //    authLoading stays true until Firebase's AuthStateListener fires AND
+    //    the Firestore profile load completes. This prevents BOTH:
+    //      (a) the login screen flashing for signed-in users, and
+    //      (b) the family_setup screen flashing for users who already have a family.
     val authLoading by viewModel.authLoading.collectAsState()
 
-    // Show splash while Firebase resolves the cached auth state.
-    // This prevents the login screen from flashing for signed-in users.
     if (authLoading) {
         Box(
-            modifier           = Modifier.fillMaxSize().background(Cream),
-            contentAlignment   = Alignment.Center
+            modifier         = Modifier.fillMaxSize().background(Cream),
+            contentAlignment = Alignment.Center
         ) {
             CircularProgressIndicator(color = Saffron)
         }
         return
     }
 
-    // Auth is resolved. Drive all navigation from here — single source of truth.
+    // ── Navigation decision tree ─────────────────────────────────────────────
+    //    Single source of truth: drive ALL navigation from here, not from
+    //    individual screens. Each LaunchedEffect targets one logical state
+    //    transition to avoid ordering bugs between multiple effects.
+
+    // 1. Signed out → login
     LaunchedEffect(currentUser) {
         if (currentUser == null) {
             navController.navigate("login") {
@@ -79,6 +86,7 @@ fun VaultoApp(viewModel: MainViewModel) {
         }
     }
 
+    // 2. Signed in, has family → home
     LaunchedEffect(family, currentUser) {
         if (currentUser != null && family != null) {
             val current = navController.currentBackStackEntry?.destination?.route
@@ -91,10 +99,24 @@ fun VaultoApp(viewModel: MainViewModel) {
         }
     }
 
+    // 3. Signed in, no family, but user skipped setup → home (personal-only mode)
+    LaunchedEffect(familySkipped, currentUser) {
+        if (currentUser != null && familySkipped) {
+            val current = navController.currentBackStackEntry?.destination?.route
+            if (current == "family_setup" || current == "login") {
+                navController.navigate("home") {
+                    popUpTo(0) { inclusive = true }
+                    launchSingleTop = true
+                }
+            }
+        }
+    }
+
+    // Compute start destination once auth is resolved.
     val startDestination = when {
-        currentUser == null -> "login"
-        family == null      -> "family_setup"
-        else                -> "home"
+        currentUser == null                    -> "login"
+        family != null || familySkipped        -> "home"
+        else                                   -> "family_setup"
     }
 
     NavHost(navController = navController, startDestination = startDestination) {
@@ -111,7 +133,7 @@ fun VaultoApp(viewModel: MainViewModel) {
                     viewModel.signInWithGoogle(activity, MainActivity.GOOGLE_WEB_CLIENT_ID) { success ->
                         isLoading = false
                         if (!success) error = "Sign-in failed. Please try again."
-                        // On success, LaunchedEffect(family, currentUser) drives navigation.
+                        // On success LaunchedEffect(family, currentUser) drives navigation.
                     }
                 },
                 isLoading = isLoading,
@@ -120,7 +142,10 @@ fun VaultoApp(viewModel: MainViewModel) {
         }
 
         composable("family_setup") {
-            FamilySetupScreen(viewModel = viewModel)
+            FamilySetupScreen(
+                viewModel = viewModel,
+                onSkip    = { viewModel.skipFamily() }
+            )
         }
 
         composable("home") {
