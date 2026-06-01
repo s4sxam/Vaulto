@@ -113,7 +113,6 @@ fun BudgetCard(
             .background(Brush.linearGradient(gradColors, Offset.Zero, Offset(1000f, 400f)))
             .padding(24.dp)
     ) {
-        // Decorative circles
         Box(Modifier.size(130.dp).offset(200.dp, (-30).dp).clip(CircleShape).background(Color.White.copy(.07f)))
         Box(Modifier.size(80.dp).offset(260.dp, 50.dp).clip(CircleShape).background(Color.White.copy(.05f)))
 
@@ -153,7 +152,6 @@ fun BudgetCard(
                 color = Color.White.copy(.8f)
             )
             Spacer(Modifier.height(14.dp))
-            // Progress bar — hidden when no budget is set (avoids a full bar showing)
             if (budget > 0) {
                 Box(
                     Modifier.fillMaxWidth().height(8.dp)
@@ -195,8 +193,9 @@ fun BudgetCard(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ExpenseRow(
-    emoji: String,
-    category: String,
+    expenseId: String,           // ✅ FIX: keyed explicitly so delete-reveal state
+    emoji: String,               //    never migrates to the wrong row when the list
+    category: String,            //    reorders after an insertion or deletion.
     note: String,
     amount: Double,
     date: Long,
@@ -205,7 +204,10 @@ fun ExpenseRow(
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var showDel by remember { mutableStateOf(false) }
+    // ✅ FIX: key the remembered state to the expense ID. Without this, Compose
+    //    can reuse a composition slot that had showDel=true for a different expense
+    //    when the list shifts (e.g., the user deletes item #1 and item #2 slides up).
+    var showDel by remember(expenseId) { mutableStateOf(false) }
     val haptic   = LocalHapticFeedback.current
 
     Surface(
@@ -227,7 +229,6 @@ fun ExpenseRow(
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Category icon
             Box(
                 Modifier
                     .size(48.dp)
@@ -238,7 +239,6 @@ fun ExpenseRow(
 
             Spacer(Modifier.width(12.dp))
 
-            // Labels — always take available weight
             Column(Modifier.weight(1f)) {
                 Text(category, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
                 if (note.isNotBlank()) {
@@ -262,10 +262,7 @@ fun ExpenseRow(
                 }
             }
 
-            // ✅ FIX: The delete button and the amount are mutually exclusive.
-            //    Previously both showed at the same time when showDel=true, making
-            //    the row layout cramped and the amount unreadable. Now the amount
-            //    slides out and the delete button slides in — clean, unambiguous.
+            // Delete button and amount are mutually exclusive — clean slide animation.
             AnimatedVisibility(
                 visible = showDel,
                 enter   = fadeIn() + slideInHorizontally { it },
@@ -275,11 +272,7 @@ fun ExpenseRow(
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     onDelete()
                 }) {
-                    Icon(
-                        Icons.Rounded.Delete,
-                        contentDescription = "Delete expense",
-                        tint               = Color(0xFFD32F2F)
-                    )
+                    Icon(Icons.Rounded.Delete, contentDescription = "Delete expense", tint = Color(0xFFD32F2F))
                 }
             }
 
@@ -326,12 +319,8 @@ fun CategoryChip(emoji: String, name: String, selected: Boolean, onClick: () -> 
     }
 }
 
-// ── Mini Spending Bar (for Analytics day-by-day view) ────────────────────────
+// ── Day Bar (Analytics daily trend chart) ────────────────────────────────────
 
-/**
- * A horizontal bar representing a single day's spending relative to a daily budget.
- * Used in the AnalyticsScreen trend section.
- */
 @Composable
 fun DayBar(
     dayLabel: String,
@@ -353,8 +342,8 @@ fun DayBar(
         if (amount > 0) {
             Text(
                 formatRupees(amount).replace("₹", ""),
-                style  = MaterialTheme.typography.labelSmall,
-                color  = TextSecondary,
+                style    = MaterialTheme.typography.labelSmall,
+                color    = TextSecondary,
                 fontSize = 9.sp
             )
         }
