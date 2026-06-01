@@ -29,20 +29,24 @@ fun HomeScreen(
     onAnalytics: () -> Unit,
     onSettings: () -> Unit
 ) {
-    val profile     by viewModel.profile.collectAsState()
-    val family      by viewModel.family.collectAsState()
-    val space       by viewModel.activeSpace.collectAsState()
-    val expenses    by viewModel.expenses.collectAsState()
-    val spent       by viewModel.totalSpent.collectAsState()
-    val remaining   by viewModel.remaining.collectAsState()
-    val budget      by viewModel.currentBudget.collectAsState()
-    val month       by viewModel.month.collectAsState()
-    val year        by viewModel.year.collectAsState()
-    val dailyAvg    by viewModel.dailyAverage.collectAsState()
+    val profile   by viewModel.profile.collectAsState()
+    val family    by viewModel.family.collectAsState()
+    val space     by viewModel.activeSpace.collectAsState()
+    val expenses  by viewModel.expenses.collectAsState()
+    val spent     by viewModel.totalSpent.collectAsState()
+    val remaining by viewModel.remaining.collectAsState()
+    val budget    by viewModel.currentBudget.collectAsState()
+    val month     by viewModel.month.collectAsState()
+    val year      by viewModel.year.collectAsState()
+    val dailyAvg  by viewModel.dailyAverage.collectAsState()
 
-    val nowCal = remember { Calendar.getInstance() }
+    // ✅ FIX: Derive nowCal inside remember(month, year) so the "current month"
+    //    check uses the real wall-clock time at the moment it is evaluated,
+    //    not a value captured once at first composition (which would be wrong
+    //    if the screen stays open past midnight).
     val isCurrentMonth = remember(month, year) {
-        month == nowCal.get(Calendar.MONTH) + 1 && year == nowCal.get(Calendar.YEAR)
+        val now = Calendar.getInstance()
+        month == now.get(Calendar.MONTH) + 1 && year == now.get(Calendar.YEAR)
     }
 
     val monthLabel = remember(month, year) {
@@ -90,8 +94,6 @@ fun HomeScreen(
                         }) {
                             Icon(Icons.Rounded.ChevronLeft, null, tint = TextSecondary)
                         }
-                        // Disable next-month when already on the current month —
-                        // future months will always show zero expenses.
                         IconButton(
                             onClick = {
                                 val c = Calendar.getInstance().apply {
@@ -151,8 +153,6 @@ fun HomeScreen(
                     Arrangement.spacedBy(12.dp)
                 ) {
                     MiniStat("📊", "Transactions", expenses.size.toString(), Modifier.weight(1f))
-                    // ✅ FIX: Daily average now comes from ViewModel where the
-                    //    divisor correctly accounts for past-month vs current-month.
                     MiniStat("📅", "Daily Avg", formatRupees(dailyAvg), Modifier.weight(1f))
                 }
             }
@@ -179,7 +179,9 @@ fun HomeScreen(
                     )
                 }
                 items(expenses, key = { it.id }) { exp ->
+                    // ✅ Pass expenseId so the delete-reveal state is keyed correctly.
                     ExpenseRow(
+                        expenseId  = exp.id,
                         emoji      = exp.categoryEmoji,
                         category   = exp.categoryName,
                         note       = exp.note,
