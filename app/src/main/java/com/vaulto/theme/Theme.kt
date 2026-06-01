@@ -1,11 +1,15 @@
 // FILE PATH: app/src/main/java/com/vaulto/ui/theme/Theme.kt
 //
-// ⚠️  ACTION REQUIRED: Delete the OLD file at
-//         app/src/main/java/com/vaulto/theme/Theme.kt
-//     (package com.vaulto.theme, wrong directory).
-//     Keep ONLY this file at com/vaulto/ui/theme/Theme.kt.
-//     Android's build system maps directories to packages; having the old file
-//     present will cause a "duplicate class" compilation error.
+// ⚠️  CRITICAL ACTION REQUIRED BEFORE BUILDING:
+//     DELETE the old file at:
+//         app/src/main/java/com/vaulto/theme/Theme.kt   ← WRONG directory
+//     Keep ONLY this file at:
+//         app/src/main/java/com/vaulto/ui/theme/Theme.kt ← CORRECT
+//
+//     Android maps directory structure to package names. Having both files
+//     on disk produces a "duplicate class VaultoTheme" compile error because
+//     both declare `fun VaultoTheme(...)` in different packages but Kotlin's
+//     R8/D8 merges them into one DEX class namespace.
 
 package com.vaulto.ui.theme
 
