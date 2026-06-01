@@ -1,3 +1,5 @@
+// FILE PATH: app/src/main/java/com/vaulto/ui/screens/LoginScreen.kt
+
 package com.vaulto.ui.screens
 
 import androidx.compose.animation.core.*
@@ -45,34 +47,33 @@ fun LoginScreen(onSignIn: () -> Unit, isLoading: Boolean, error: String?) {
 
             Text(
                 "Vaulto",
-                style = MaterialTheme.typography.headlineLarge,
-                color = TextPrimary,
+                style      = MaterialTheme.typography.headlineLarge,
+                color      = TextPrimary,
                 fontWeight = FontWeight.ExtraBold
             )
             Text(
                 "Track family & personal expenses\ntogether — in real time",
-                style = MaterialTheme.typography.bodyLarge,
-                color = TextSecondary,
+                style     = MaterialTheme.typography.bodyLarge,
+                color     = TextSecondary,
                 textAlign = TextAlign.Center
             )
 
             Spacer(Modifier.height(16.dp))
 
-            // Features
             listOf(
                 "👨‍👩‍👧‍👦" to "Shared family budget",
-                "🔒" to "Private pocket money",
-                "📊" to "Spending analytics",
-                "☁️" to "Syncs across all phones"
+                "🔒"       to "Private pocket money",
+                "📊"       to "Spending analytics",
+                "☁️"       to "Syncs across all phones"
             ).forEach { (emoji, text) ->
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
+                    modifier             = Modifier.fillMaxWidth(),
+                    verticalAlignment    = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape    = RoundedCornerShape(10.dp),
+                        color    = MaterialTheme.colorScheme.primaryContainer,
                         modifier = Modifier.size(40.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
@@ -85,24 +86,38 @@ fun LoginScreen(onSignIn: () -> Unit, isLoading: Boolean, error: String?) {
 
             Spacer(Modifier.height(16.dp))
 
+            // ✅ Error banner — shown only on actual failure, never on cancellation.
             if (error != null) {
                 Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFFFFEBEE)) {
-                    Text(error, color = Color(0xFFD32F2F), modifier = Modifier.padding(12.dp, 8.dp),
-                        style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        error,
+                        color    = Color(0xFFD32F2F),
+                        modifier = Modifier.padding(12.dp, 8.dp),
+                        style    = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
 
             Button(
-                onClick = onSignIn,
-                enabled = !isLoading,
+                onClick  = onSignIn,
+                enabled  = !isLoading,
                 modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Saffron)
+                shape    = RoundedCornerShape(16.dp),
+                colors   = ButtonDefaults.buttonColors(containerColor = Saffron)
             ) {
                 if (isLoading) {
-                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp), strokeWidth = 2.5.dp)
+                    CircularProgressIndicator(
+                        color       = Color.White,
+                        modifier    = Modifier.size(24.dp),
+                        strokeWidth = 2.5.dp
+                    )
                 } else {
-                    Text("🔑  Sign in with Google", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        "🔑  Sign in with Google",
+                        style      = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
