@@ -7,19 +7,27 @@
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.Vaulto"
         android:networkSecurityConfig="@xml/network_security_config">
 
         <!--
-            windowSoftInputMode="adjustResize" ensures the keyboard doesn't cover
+            windowSoftInputMode="adjustResize" keeps the keyboard from covering
             amount/note fields in AddExpenseScreen and budget fields in Settings.
+
+            configChanges: declaring orientation and screenSize prevents Activity
+            recreation on rotation — the ViewModel (and its Firestore listeners)
+            survive without any extra work because they are already scoped to the
+            ViewModel lifecycle. This also eliminates the brief white flash that
+            occurs on some devices when the Activity is recreated mid-sign-in.
         -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
