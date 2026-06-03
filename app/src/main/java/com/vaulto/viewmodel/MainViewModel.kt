@@ -45,13 +45,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _family = MutableStateFlow<FamilyGroup?>(null)
     val family: StateFlow<FamilyGroup?> = _family
 
-    // ✅ FIX — authLoading race condition:
-    //    `true` until Firebase's AuthStateListener fires its FIRST callback and
-    //    the subsequent profile load either succeeds or is determined unnecessary.
-    //    We use a dedicated boolean so the splash hides only after we know whether
-    //    the user is signed-in AND (if so) whether they already have a family —
-    //    preventing both the login-screen flash AND the family-setup flash for
-    //    returning users.
+    // ✅ FIX — authLoading stays true until BOTH the AuthStateListener fires AND
+    //    loadProfile() completes its first Firestore read. Previously authLoading
+    //    was set to false immediately after launching loadProfile(), causing the
+    //    nav decision tree to fire before family data arrived — routing users with
+    //    a family to family_setup on every cold launch.
     private val _authLoading = MutableStateFlow(true)
     val authLoading: StateFlow<Boolean> = _authLoading
 
@@ -126,64 +124,67 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch {
-            // ✅ FIX — authLoading lifecycle:
-            //    collectLatest ensures only the most-recent emission is processed.
-            //    We set authLoading = false AFTER the profile/family load completes
-            //    (or immediately if the user is signed out). This prevents the
-            //    login screen from flashing for returning signed-in users and
-            //    prevents the family_setup screen from flashing for users who
-            //    already have a family.
             currentUser.collectLatest { user ->
                 if (user == null) {
-                    // Signed out — clear state and stop loading immediately.
                     profileJob?.cancel()
                     _profile.value = null
                     _family.value  = null
                     _authLoading.value = false
                 } else {
-                    // Signed in — load profile before marking auth as done.
-                    // authLoading stays true until loadProfile() finishes its
-                    // first Firestore read so navigation waits for real data.
+                    // ✅ FIX: suspend until loadProfile() finishes its first Firestore
+                    //    read before clearing authLoading. Previously loadProfile() was
+                    //    launched-and-forgotten, so _authLoading became false while
+                    //    _family was still null, sending returning users to family_setup.
                     loadProfile(user.uid)
+                    // loadProfile() is now a suspend fun — this line runs AFTER it returns.
                     _authLoading.value = false
                 }
             }
         }
     }
 
-    private fun loadProfile(uid: String) {
+    private suspend fun loadProfile(uid: String) {
         profileJob?.cancel()
         profileJob = viewModelScope.launch {
             try {
-                val p = authRepo.getUserProfile(uid) ?: run {
-                    // Profile doesn't exist yet (race between AuthState + Firestore write).
-                    // Leave family as-is; a retry will succeed once the write completes.
-                    return@launch
-                }
+                val p = authRepo.getUserProfile(uid) ?: return@launch
                 _profile.value = p
 
                 if (p.familyId.isNotBlank()) {
-                    // ✅ FIX: Only null-out _family if the NEW profile genuinely has
-                    //    no familyId. Without this guard, cancelling + restarting
-                    //    loadProfile() briefly sets _family = null, causing a
-                    //    momentary navigation back to family_setup.
                     budgetRepo.getFamilyFlow(p.familyId)
                         .catch { e -> Log.e(TAG, "Family flow error", e) }
                         .collect { _family.value = it }
                 } else {
-                    // Profile loaded and user has no family — only now clear _family.
                     _family.value = null
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "loadProfile error for uid=$uid", e)
             }
         }
+        // Wait for the initial profile + family snapshot before returning,
+        // so authLoading is cleared only after we have real navigation data.
+        profileJob?.join()
     }
 
-    fun signInWithGoogle(activity: Activity, webClientId: String, onResult: (Boolean) -> Unit) =
+    /**
+     * Returns via onResult:
+     *   true  → signed in successfully
+     *   false → real error (show "Sign-in failed" banner)
+     *   null  → user cancelled the picker (do nothing, no banner)
+     */
+    fun signInWithGoogle(activity: Activity, webClientId: String, onResult: (Boolean?) -> Unit) =
         viewModelScope.launch {
             val result = authRepo.signInWithGoogle(activity, webClientId)
-            onResult(result.isSuccess)
+            when {
+                result.isSuccess -> onResult(true)
+                // GetCredentialCancellationException — user tapped Back, not an error.
+                result.exceptionOrNull()?.javaClass?.simpleName
+                    ?.contains("Cancellation") == true -> onResult(null)
+                else -> {
+                    Log.e(TAG, "signInWithGoogle failed", result.exceptionOrNull())
+                    onResult(false)
+                }
+            }
         }
 
     fun signOut() {
