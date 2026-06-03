@@ -130,10 +130,13 @@ fun VaultoApp(viewModel: MainViewModel) {
                 onSignIn = {
                     isLoading = true
                     error     = null
-                    viewModel.signInWithGoogle(activity, MainActivity.GOOGLE_WEB_CLIENT_ID) { success ->
+                    viewModel.signInWithGoogle(activity, MainActivity.GOOGLE_WEB_CLIENT_ID) { result ->
                         isLoading = false
-                        if (!success) error = "Sign-in failed. Please try again."
-                        // On success LaunchedEffect(family, currentUser) drives navigation.
+                        when (result) {
+                            true  -> { /* success — LaunchedEffect drives navigation */ }
+                            false -> error = "Sign-in failed. Please try again."
+                            null  -> { /* user cancelled picker — do nothing, no error */ }
+                        }
                     }
                 },
                 isLoading = isLoading,
