@@ -1,175 +1,306 @@
-// FILE PATH: app/src/main/java/com/vaulto/MainActivity.kt
+// FILE PATH: app/src/main/java/com/vaulto/viewmodel/MainViewModel.kt
 
-package com.vaulto
+package com.vaulto.viewmodel
 
-import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
-import androidx.activity.viewModels
-import androidx.compose.animation.*
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
-import com.vaulto.ui.screens.*
-import com.vaulto.ui.theme.Cream
-import com.vaulto.ui.theme.Saffron
-import com.vaulto.ui.theme.VaultoTheme
-import com.vaulto.viewmodel.MainViewModel
+import android.app.Activity
+import android.app.Application
+import android.util.Log
+import androidx.lifecycle.*
+import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.GoogleAuthProvider
+import com.vaulto.auth.AuthRepository
+import com.vaulto.data.model.*
+import com.vaulto.data.repository.BudgetRepository
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+import java.util.Calendar
 
-class MainActivity : ComponentActivity() {
+private const val TAG = "MainViewModel"
 
-    private val viewModel: MainViewModel by viewModels()
+@OptIn(ExperimentalCoroutinesApi::class)
+class MainViewModel(application: Application) : AndroidViewModel(application) {
 
-    companion object {
-        // Web client ID (type 3) from google-services.json — used by Credential Manager
-        // to identify the server-side OAuth 2.0 client that should receive the ID token.
-        // This is NOT the Android client ID (type 1).
-        const val GOOGLE_WEB_CLIENT_ID =
-            "329764161199-1qsl67npq34p0sj81ha7an7b2svhm8b5.apps.googleusercontent.com"
-    }
+    private val authRepo   = AuthRepository(application)
+    private val budgetRepo = BudgetRepository()
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge()
-        super.onCreate(savedInstanceState)
-        setContent {
-            VaultoTheme {
-                VaultoApp(viewModel)
-            }
+    val currentUser: StateFlow<FirebaseUser?> = authRepo.currentUser
+
+    private val cal    = Calendar.getInstance()
+    private val _month = MutableStateFlow(cal.get(Calendar.MONTH) + 1)
+    private val _year  = MutableStateFlow(cal.get(Calendar.YEAR))
+    val month: StateFlow<Int> = _month
+    val year:  StateFlow<Int> = _year
+
+    // ✅ Default to PERSONAL so new users never see an empty Family view while
+    //    the profile / family Firestore fetch is still in flight.
+    private val _space = MutableStateFlow(SpaceType.PERSONAL)
+    val activeSpace: StateFlow<SpaceType> = _space
+    fun setSpace(s: SpaceType) { _space.value = s }
+
+    private val _profile = MutableStateFlow<UserProfile?>(null)
+    val profile: StateFlow<UserProfile?> = _profile
+
+    private val _family = MutableStateFlow<FamilyGroup?>(null)
+    val family: StateFlow<FamilyGroup?> = _family
+
+    // ✅ FIX — authLoading stays true until BOTH the AuthStateListener fires AND
+    //    loadProfile() completes its first Firestore read. Previously authLoading
+    //    was set to false immediately after launching loadProfile(), causing the
+    //    nav decision tree to fire before family data arrived — routing users with
+    //    a family to family_setup on every cold launch.
+    private val _authLoading = MutableStateFlow(true)
+    val authLoading: StateFlow<Boolean> = _authLoading
+
+    // ✅ NEW: Tracks whether the user has explicitly chosen to skip family setup.
+    //    Persisted only in-memory (resets on process death), which is fine —
+    //    the user can always set up a family later via Settings (future feature).
+    private val _familySkipped = MutableStateFlow(false)
+    val familySkipped: StateFlow<Boolean> = _familySkipped
+
+    fun skipFamily() { _familySkipped.value = true }
+
+    val allCategories: StateFlow<List<Category>> = currentUser
+        .filterNotNull()
+        .flatMapLatest { budgetRepo.getUserCategoriesFlow(it.uid) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), budgetRepo.defaultCategories)
+
+    val expenses: StateFlow<List<Expense>> = combine(
+        currentUser, _family, _space, _month, _year
+    ) { user, fam, space, m, y ->
+        when {
+            user == null                             -> flowOf(emptyList())
+            space == SpaceType.PERSONAL              -> budgetRepo.getPersonalExpensesFlow(user.uid, m, y)
+            space == SpaceType.FAMILY && fam != null -> budgetRepo.getFamilyExpensesFlow(fam.id, m, y)
+            else                                     -> flowOf(emptyList())
         }
-    }
-}
+    }.flatMapLatest { it }
+     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-@Composable
-fun VaultoApp(viewModel: MainViewModel) {
-    val navController  = rememberNavController()
-    val currentUser    by viewModel.currentUser.collectAsState()
-    val family         by viewModel.family.collectAsState()
-    val familySkipped  by viewModel.familySkipped.collectAsState()
+    val totalSpent: StateFlow<Double> = expenses
+        .map { list -> list.sumOf { it.amount } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0.0)
 
-    // ✅ FIX — Splash gate:
-    //    authLoading stays true until Firebase's AuthStateListener fires AND
-    //    the Firestore profile load completes. This prevents BOTH:
-    //      (a) the login screen flashing for signed-in users, and
-    //      (b) the family_setup screen flashing for users who already have a family.
-    val authLoading by viewModel.authLoading.collectAsState()
-
-    if (authLoading) {
-        Box(
-            modifier         = Modifier.fillMaxSize().background(Cream),
-            contentAlignment = Alignment.Center
-        ) {
-            CircularProgressIndicator(color = Saffron)
+    val currentBudget: StateFlow<Double> = combine(
+        currentUser, _family, _space, _month, _year
+    ) { user, fam, space, m, y ->
+        when {
+            user == null                             -> flowOf(0.0)
+            space == SpaceType.PERSONAL              -> budgetRepo.getPersonalBudgetFlow(user.uid, m, y)
+            space == SpaceType.FAMILY && fam != null -> flowOf(fam.monthlyBudget)
+            else                                     -> flowOf(0.0)
         }
-        return
-    }
+    }.flatMapLatest { it }
+     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0.0)
 
-    // ── Navigation decision tree ─────────────────────────────────────────────
-    //    Single source of truth: drive ALL navigation from here, not from
-    //    individual screens. Each LaunchedEffect targets one logical state
-    //    transition to avoid ordering bugs between multiple effects.
+    // Always reads personal budget regardless of active space.
+    val personalBudget: StateFlow<Double> = combine(currentUser, _month, _year) { user, m, y ->
+        if (user != null) budgetRepo.getPersonalBudgetFlow(user.uid, m, y) else flowOf(0.0)
+    }.flatMapLatest { it }
+     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0.0)
 
-    // 1. Signed out → login
-    LaunchedEffect(currentUser) {
-        if (currentUser == null) {
-            navController.navigate("login") {
-                popUpTo(0) { inclusive = true }
-                launchSingleTop = true
-            }
+    val remaining: StateFlow<Double> = combine(currentBudget, totalSpent) { b, s -> b - s }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0.0)
+
+    /**
+     * Daily average spend for the current month.
+     * Divides total spent by days elapsed in the selected month
+     * (capped at today for the current month; full month for past months).
+     */
+    val dailyAverage: StateFlow<Double> = combine(totalSpent, _month, _year) { spent, m, y ->
+        if (spent == 0.0) return@combine 0.0
+        val now = Calendar.getInstance()
+        val divisor = if (m == now.get(Calendar.MONTH) + 1 && y == now.get(Calendar.YEAR)) {
+            maxOf(now.get(Calendar.DAY_OF_MONTH), 1)
+        } else {
+            Calendar.getInstance().apply { set(y, m - 1, 1) }
+                .getActualMaximum(Calendar.DAY_OF_MONTH)
         }
-    }
+        spent / divisor
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0.0)
 
-    // 2. Signed in, has family → home
-    LaunchedEffect(family, currentUser) {
-        if (currentUser != null && family != null) {
-            val current = navController.currentBackStackEntry?.destination?.route
-            if (current == "family_setup" || current == "login") {
-                navController.navigate("home") {
-                    popUpTo(0) { inclusive = true }
-                    launchSingleTop = true
+    private var profileJob: Job? = null
+
+    init {
+        viewModelScope.launch {
+            currentUser.collectLatest { user ->
+                if (user == null) {
+                    profileJob?.cancel()
+                    _profile.value = null
+                    _family.value  = null
+                    _authLoading.value = false
+                } else {
+                    // ✅ FIX: suspend until loadProfile() finishes its first Firestore
+                    //    read before clearing authLoading. Previously loadProfile() was
+                    //    launched-and-forgotten, so _authLoading became false while
+                    //    _family was still null, sending returning users to family_setup.
+                    loadProfile(user.uid)
+                    // loadProfile() is now a suspend fun — this line runs AFTER it returns.
+                    _authLoading.value = false
                 }
             }
         }
     }
 
-    // 3. Signed in, no family, but user skipped setup → home (personal-only mode)
-    LaunchedEffect(familySkipped, currentUser) {
-        if (currentUser != null && familySkipped) {
-            val current = navController.currentBackStackEntry?.destination?.route
-            if (current == "family_setup" || current == "login") {
-                navController.navigate("home") {
-                    popUpTo(0) { inclusive = true }
-                    launchSingleTop = true
+    private suspend fun loadProfile(uid: String) {
+        profileJob?.cancel()
+
+        // 🐛 ROOT CAUSE OF "can't log in" / infinite splash:
+        //    getFamilyFlow() is a callbackFlow backed by addSnapshotListener — it
+        //    NEVER completes on its own. The old code did
+        //        profileJob = launch { ... .collect { ... } }
+        //        profileJob?.join()
+        //    For any user whose Firestore profile already has a non-blank
+        //    familyId (i.e. anyone who has ever created/joined a family),
+        //    .collect{} never returns, so the launch{} job never finishes,
+        //    so join() suspends forever, so loadProfile() never returns, so
+        //    _authLoading is NEVER set to false. The app sits on the
+        //    CircularProgressIndicator splash screen forever — even though
+        //    Firebase Auth itself signed the user in successfully.
+        //
+        // ✅ FIX: wait only for the FIRST emission (via CompletableDeferred),
+        //    not for the whole job. The live listener keeps running in the
+        //    background inside profileJob to keep _family updated in real
+        //    time; loadProfile() returns as soon as we have an initial
+        //    profile + family snapshot to make a navigation decision with.
+        val initialLoadDone = CompletableDeferred<Unit>()
+
+        profileJob = viewModelScope.launch {
+            try {
+                val p = authRepo.getUserProfile(uid)
+                if (p == null) {
+                    _profile.value = null
+                    _family.value  = null
+                    initialLoadDone.complete(Unit)
+                    return@launch
                 }
-            }
-        }
-    }
+                _profile.value = p
 
-    // Compute start destination once auth is resolved.
-    val startDestination = when {
-        currentUser == null                    -> "login"
-        family != null || familySkipped        -> "home"
-        else                                   -> "family_setup"
-    }
-
-    NavHost(navController = navController, startDestination = startDestination) {
-
-        composable("login") {
-            val activity  = LocalContext.current as MainActivity
-            var isLoading by remember { mutableStateOf(false) }
-            var error     by remember { mutableStateOf<String?>(null) }
-
-            LoginScreen(
-                onSignIn = {
-                    isLoading = true
-                    error     = null
-                    viewModel.signInWithGoogle(activity, MainActivity.GOOGLE_WEB_CLIENT_ID) { result ->
-                        isLoading = false
-                        when (result) {
-                            true  -> { /* success — LaunchedEffect drives navigation */ }
-                            false -> error = "Sign-in failed. Please try again."
-                            null  -> { /* user cancelled picker — do nothing, no error */ }
+                if (p.familyId.isNotBlank()) {
+                    budgetRepo.getFamilyFlow(p.familyId)
+                        .catch { e ->
+                            Log.e(TAG, "Family flow error", e)
+                            _family.value = null
+                            initialLoadDone.complete(Unit) // unblock startup even on error
                         }
-                    }
-                },
-                isLoading = isLoading,
-                error     = error
+                        .collect { fam ->
+                            _family.value = fam
+                            // complete() is idempotent — only the first
+                            // emission unblocks loadProfile(); later
+                            // real-time updates just update _family.
+                            initialLoadDone.complete(Unit)
+                        }
+                } else {
+                    _family.value = null
+                    initialLoadDone.complete(Unit)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "loadProfile error for uid=$uid", e)
+                initialLoadDone.complete(Unit)
+            }
+        }
+
+        // Wait for the initial profile + family snapshot (or failure) before
+        // returning, so authLoading is cleared only after we have real
+        // navigation data — WITHOUT waiting on the never-ending listener job.
+        initialLoadDone.await()
+    }
+
+    /**
+     * Returns via onResult:
+     *   true  → signed in successfully
+     *   false → real error (show "Sign-in failed" banner)
+     *   null  → user cancelled the picker (do nothing, no banner)
+     */
+    fun signInWithGoogle(activity: Activity, webClientId: String, onResult: (Boolean?) -> Unit) =
+        viewModelScope.launch {
+            val result = authRepo.signInWithGoogle(activity, webClientId)
+            when {
+                result.isSuccess -> onResult(true)
+                // GetCredentialCancellationException — user tapped Back, not an error.
+                result.exceptionOrNull()?.javaClass?.simpleName
+                    ?.contains("Cancellation") == true -> onResult(null)
+                else -> {
+                    Log.e(TAG, "signInWithGoogle failed", result.exceptionOrNull())
+                    onResult(false)
+                }
+            }
+        }
+
+    fun signOut() {
+        profileJob?.cancel()
+        _familySkipped.value = false
+        authRepo.signOut()
+    }
+
+    fun createFamily(name: String, budget: Double) = viewModelScope.launch {
+        val uid = currentUser.value?.uid ?: return@launch
+        budgetRepo.createFamily(uid, name, budget)
+        _familySkipped.value = false
+        loadProfile(uid)
+    }
+
+    fun joinFamily(code: String, onResult: (Boolean) -> Unit) = viewModelScope.launch {
+        val uid = currentUser.value?.uid ?: return@launch
+        val ok  = budgetRepo.joinFamily(uid, code)
+        if (ok) {
+            _familySkipped.value = false
+            loadProfile(uid)
+        }
+        onResult(ok)
+    }
+
+    fun updateFamilyBudget(amount: Double) = viewModelScope.launch {
+        _family.value?.id?.let { budgetRepo.updateFamilyBudget(it, amount) }
+    }
+
+    fun setPersonalBudget(amount: Double) = viewModelScope.launch {
+        val uid = currentUser.value?.uid ?: return@launch
+        budgetRepo.setPersonalBudget(uid, _month.value, _year.value, amount)
+    }
+
+    fun addExpense(category: Category, amount: Double, note: String) = viewModelScope.launch {
+        val user = currentUser.value ?: return@launch
+        val prof = _profile.value
+        budgetRepo.addExpense(
+            Expense(
+                spaceType     = _space.value.name,
+                familyId      = if (_space.value == SpaceType.FAMILY) _family.value?.id ?: "" else "",
+                userId        = user.uid,
+                userName      = prof?.name ?: user.displayName ?: "Member",
+                userEmoji     = prof?.emoji ?: "👤",
+                categoryId    = category.id,
+                categoryName  = category.name,
+                categoryEmoji = category.emoji,
+                amount        = amount,
+                note          = note,
+                month         = _month.value,
+                year          = _year.value
             )
-        }
+        )
+    }
 
-        composable("family_setup") {
-            FamilySetupScreen(
-                viewModel = viewModel,
-                onSkip    = { viewModel.skipFamily() }
-            )
-        }
+    fun deleteExpense(id: String) = viewModelScope.launch { budgetRepo.deleteExpense(id) }
 
-        composable("home") {
-            HomeScreen(
-                viewModel    = viewModel,
-                onAddExpense = { navController.navigate("add_expense") },
-                onAnalytics  = { navController.navigate("analytics") },
-                onSettings   = { navController.navigate("settings") }
-            )
-        }
+    fun addCustomCategory(name: String, emoji: String) = viewModelScope.launch {
+        currentUser.value?.uid?.let { budgetRepo.addCustomCategory(it, name, emoji) }
+    }
 
-        composable("add_expense") {
-            AddExpenseScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
-        }
+    fun setMonth(m: Int, y: Int) { _month.value = m; _year.value = y }
 
-        composable("analytics") {
-            AnalyticsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
-        }
-
-        composable("settings") {
-            SettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+    fun updateEmoji(emoji: String) = viewModelScope.launch {
+        val p = _profile.value ?: return@launch
+        val updated = p.copy(emoji = emoji)
+        // Optimistic local update for instant UI response.
+        _profile.value = updated
+        try {
+            authRepo.updateUserProfile(updated)
+        } catch (e: Exception) {
+            // Revert on failure so the UI stays consistent with Firestore.
+            Log.e(TAG, "updateEmoji failed, reverting", e)
+            _profile.value = p
         }
     }
 }
